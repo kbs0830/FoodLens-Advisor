@@ -10,9 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun FoodAnalysisScreen(
+fun FoodAnalysisScreenV2(
     state: AnalysisUiState,
     onTestConnectionClick: () -> Unit,
 ) {
@@ -76,7 +80,7 @@ fun FoodAnalysisScreen(
         when (state) {
             AnalysisUiState.Idle -> {
                 StatusCard(
-                    icon = "⏳",
+                    icon = null,
                     title = "準備就緒",
                     message = "點擊按鈕測試與 BFF 的連線",
                     color = Color.Gray,
@@ -99,7 +103,7 @@ fun FoodAnalysisScreen(
 
             is AnalysisUiState.Connected -> {
                 StatusCard(
-                    icon = "✅",
+                    icon = Icons.Default.Check,
                     title = "連線成功！",
                     message = "BFF 狀態：${state.data.status}",
                     color = Color(0xFF4CAF50),
@@ -108,7 +112,7 @@ fun FoodAnalysisScreen(
 
             is AnalysisUiState.Error -> {
                 StatusCard(
-                    icon = "❌",
+                    icon = Icons.Default.ErrorOutline,
                     title = "連線失敗",
                     message = state.message,
                     color = Color(0xFFE74C3C),
@@ -132,7 +136,7 @@ fun FoodAnalysisScreen(
 
 @Composable
 fun StatusCard(
-    icon: String,
+    icon: androidx.compose.material.icons.Icons.Filled? = null,
     title: String,
     message: String,
     color: Color,
@@ -144,10 +148,14 @@ fun StatusCard(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = icon,
-            fontSize = 32.sp,
-        )
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(32.dp),
+            )
+        }
         Text(
             text = title,
             fontSize = 18.sp,
@@ -238,9 +246,11 @@ fun RuleCheckItem(label: String, passed: Boolean) {
             .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = if (passed) "✅" else "❌",
-            fontSize = 16.sp,
+        Icon(
+            imageVector = if (passed) Icons.Default.Check else Icons.Default.ErrorOutline,
+            contentDescription = null,
+            tint = if (passed) Color(0xFF4CAF50) else Color(0xFFE74C3C),
+            modifier = Modifier.size(16.dp),
         )
         Text(
             text = label,

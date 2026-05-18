@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodLens Advisor - 食物分析</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🍽️ FoodLens Advisor</h1>
+            <p class="subtitle">AI 飲食分析助手</p>
+        </header>
+
+        <main class="main-content">
+            <button id="testBtn" class="btn btn-primary" onclick="testConnection()">
+                測試 BFF 連線
+            </button>
+
+            <div id="status" class="status"></div>
+            <div id="result" class="result"></div>
+
+            <div class="tips">
+                <p>💡 提示：確保 BFF 已啟動在 http://127.0.0.1:8080</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
