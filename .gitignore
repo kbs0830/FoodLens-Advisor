@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# Android / Gradle
+.gradle/
+local.properties
+**/build/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
