@@ -1,3 +1,9 @@
+import os
+import sys
+
+if __name__ == "__main__" and __package__ is None:
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from fastapi import FastAPI, HTTPException
 from app.schemas import AnalyzeFoodRequest, AnalyzeFoodResponse
 from app.services.vision_service import analyze_with_provider
@@ -20,3 +26,9 @@ async def analyze_food(req: AnalyzeFoodRequest) -> AnalyzeFoodResponse:
         return await analyze_with_provider(req)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"analysis failed: {exc}") from exc
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=False)
