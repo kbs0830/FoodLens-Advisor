@@ -187,3 +187,130 @@ body {
     color: #856404;
     text-align: center;
 }
+
+/* ==================== 新增 YOLO 檢測樣式 ==================== */
+
+.section-test,
+.section-upload,
+.section-result {
+    margin-bottom: 32px;
+}
+
+.section-test h2,
+.section-upload h2,
+.section-result h2 {
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #667eea;
+}
+
+/* 上傳區域 */
+.upload-area {
+    border: 2px dashed #667eea;
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: #f9f9f9;
+    margin-bottom: 16px;
+}
+
+.upload-area:hover {
+    border-color: #764ba2;
+    background: #f0e8ff;
+}
+
+.upload-placeholder {
+    color: #666;
+}
+
+.upload-placeholder p {
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.upload-placeholder small {
+    font-size: 12px;
+    color: #999;
+}
+
+/* 按鈕組 */
+.button-group {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.btn-secondary {
+    background: #f0f0f0;
+    color: #333;
+    flex: 1;
+}
+
+.btn-secondary:hover {
+    background: #e0e0e0;
+    transform: translateY(-2px);
+}
+
+/* 檢測卡片 */
+.detection-card {
+    background: #e3f2fd;
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid #1976d2;
+    line-height: 1.8;
+}
+
+.detection-card h3 {
+    margin-bottom: 12px;
+    color: #1976d2;
+}
+
+.detection-item {
+    margin: 12px 0;
+    font-size: 13px;
+    color: #555;
+}
+
+.detection-item ul {
+    list-style-position: inside;
+    margin-top: 8px;
+    padding-left: 16px;
+}
+
+.detection-item li {
+    padding: 4px 0;
+    font-size: 12px;
+}
+
+.detection-result {
+    margin-top: 16px;
+}
+
+/* 預覽圖像 */
+#previewImage {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 響應式設計 */
+@media (max-width: 600px) {
+    .header h1 {
+        font-size: 24px;
+    }
+
+    .main-content {
+        padding: 20px 16px;
+    }
+
+    .button-group {
+        flex-direction: column;
+    }
+
+    .upload-area {
+        padding: 30px 16px;
+    }
+}

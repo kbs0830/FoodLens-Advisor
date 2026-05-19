@@ -7,6 +7,13 @@ class AnalyzeFoodRequest(BaseModel):
     locale: str = Field(default="zh-TW")
 
 
+class AnalyzeTextRequest(BaseModel):
+    """新增: YOLO 檢測結果文字分析請求"""
+    food_items: List[str] = Field(..., description="檢測到的食物清單")
+    description: str = Field(..., description="YOLO 檢測描述")
+    locale: str = Field(default="zh-TW")
+
+
 class MacroNutrients(BaseModel):
     protein_g: float
     carbs_g: float

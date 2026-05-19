@@ -10,23 +10,69 @@
     <div class="container">
         <header class="header">
             <h1>🍽️ FoodLens Advisor</h1>
-            <p class="subtitle">AI 飲食分析助手</p>
+            <p class="subtitle">AI 飲食分析助手 - YOLO 檢測版</p>
         </header>
 
         <main class="main-content">
-            <button id="testBtn" class="btn btn-primary" onclick="testConnection()">
-                測試 BFF 連線
-            </button>
+            <!-- 連線測試部分 -->
+            <section class="section-test">
+                <h2>🔗 連線檢測</h2>
+                <button id="testBtn" class="btn btn-primary" onclick="testConnection()">
+                    測試 BFF 連線
+                </button>
+                <div id="status" class="status"></div>
+            </section>
 
-            <div id="status" class="status"></div>
-            <div id="result" class="result"></div>
+            <!-- 圖像上傳與 YOLO 檢測部分 -->
+            <section class="section-upload">
+                <h2>📸 上傳食物圖像</h2>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                    <div class="upload-placeholder">
+                        <p>🖼️ 點擊選擇圖像或拖拽上傳</p>
+                        <small>支援 JPG, PNG, GIF</small>
+                    </div>
+                </div>
+                <canvas id="detectionCanvas" style="display: none;"></canvas>
+                <img id="previewImage" style="display: none; max-width: 100%; margin: 20px 0;">
+                
+                <div class="button-group">
+                    <button id="uploadBtn" class="btn btn-secondary" onclick="selectImage()">
+                        選擇圖像
+                    </button>
+                    <button id="cameraBtn" class="btn btn-secondary" onclick="useCamera()" style="display: none;">
+                        使用相機
+                    </button>
+                </div>
 
+                <!-- YOLO 檢測狀態 -->
+                <div id="detectionStatus" style="display: none;"></div>
+                
+                <!-- YOLO 檢測結果 -->
+                <div id="detectionResult" class="detection-result" style="display: none;"></div>
+            </section>
+
+            <!-- AI 分析結果部分 -->
+            <section class="section-result">
+                <div id="result" class="result"></div>
+            </section>
+
+            <!-- 提示 -->
             <div class="tips">
                 <p>💡 提示：確保 BFF 已啟動在 http://127.0.0.1:8080</p>
+                <p>🤖 使用 YOLO 前端檢測 + AI 後端分析，大幅降低 Token 消耗</p>
             </div>
         </main>
     </div>
 
+    <!-- TensorFlow.js 和 COCO-SSD 模型 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2"></script>
+    
+    <!-- YOLO 檢測模塊 -->
+    <script src="yolo-detector.js"></script>
+    
+    <!-- 主程式 -->
     <script src="script.js"></script>
 </body>
 </html>
