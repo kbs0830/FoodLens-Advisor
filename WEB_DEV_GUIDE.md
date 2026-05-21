@@ -246,3 +246,42 @@ python app/main.py
 ---
 
 **Happy Coding! 🚀**
+
+---
+
+<!-- Merged from IMPLEMENTATION_GUIDE.md on 2026-05-21 -->
+
+## Implementation Guide (Merged)
+
+(以下內容由 `IMPLEMENTATION_GUIDE.md` 合併，原檔已備份於 `docs/duplicates_backup/IMPLEMENTATION_GUIDE.md`)
+
+# 🚀 FoodLens Advisor - YOLO + AI 集成完成指南
+
+**狀態**: ✅ 全功能完成  
+**日期**: 2026年5月19日  
+**版本**: v0.2.0
+
+---
+
+## 📦 已完成的功能
+
+### ✅ 後端 (BFF FastAPI)
+- [x] 健康檢查端點 (`GET /health`)
+- [x] 原始圖像分析 (`POST /api/v1/analyze-food`) - Mock
+- [x] **新增** 文字分析端點 (`POST /api/v1/analyze-text`) - 🎉 核心功能
+- [x] 營養計算引擎
+- [x] 飲食規則檢查
+- [x] AI 建議生成
+
+### ✅ 前端 (Web Client)
+- [x] 基礎 UI 佈局
+- [x] BFF 連線測試
+- [x] **新增** YOLO 檢測模組 (`yolo-detector.js`)
+- [x] **新增** 圖像上傳功能
+- [x] **新增** YOLO 檢測結果展示
+- [x] **新增** 後端分析結果展示
+- [x] **新增** 響應式設計
+
+---
+
+（已略過後續重複段落；完整備份見 docs/duplicates_backup）

@@ -329,3 +329,31 @@ OPENAI_API_KEY=sk-...
 
 **祝你取得優異成績！🚀**
 
+---
+
+<!-- Merged from ARCHITECTURE_DESIGN.md and FILE_STRUCTURE.md on 2026-05-21 -->
+
+## Architecture & File Structure (Merged)
+
+(以下內容合併自 `ARCHITECTURE_DESIGN.md` 與 `FILE_STRUCTURE.md`，原檔已備份於 `docs/duplicates_backup/`)
+
+### 架構精華
+
+本專案採用 YOLO 前端檢測 + AI 後端分析的混合架構，重點如下：
+
+- 前端: `web-client/`，使用 TensorFlow.js 或 YOLOv5n 進行食物檢測。
+- 後端: `bff-fastapi/`，提供 `POST /api/v1/analyze-text` 與 `/api/v1/analyze-food`。
+- 優勢: Token/成本大幅降低、圖像不直接上傳、可離線檢測。
+
+### 文件與檔案結構重點
+
+```
+foodlens-web/
+├── bff-fastapi/  # 後端
+├── web-client/   # 前端
+├── android-client/ (deprecated)
+└── docs/         # 文檔與備份
+```
+
+（完整細節已備份於 `docs/duplicates_backup/ARCHITECTURE_DESIGN.md` 與 `docs/duplicates_backup/FILE_STRUCTURE.md`）
+
