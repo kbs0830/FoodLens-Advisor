@@ -1,4 +1,4 @@
-# Web Client
+# Web Client (backup)
 
 簡潔的 HTML + CSS + JavaScript 前端，用來連接 FoodLens BFF。
 

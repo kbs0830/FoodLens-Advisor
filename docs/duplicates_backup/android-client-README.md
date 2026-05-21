@@ -1,4 +1,4 @@
-# Android Client
+# Android Client (backup)
 
 此資料夾已補齊可編譯的 Android 最小專案（Kotlin + Compose + Retrofit）。
 
