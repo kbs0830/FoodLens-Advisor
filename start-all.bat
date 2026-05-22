@@ -7,6 +7,8 @@ set "BFF_DIR=%ROOT%foodlens-web\bff-fastapi"
 
 rem Ensure console uses UTF-8 to avoid garbled logs on Windows
 chcp 65001 >nul
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 
 cls
 echo ==============================================
@@ -80,7 +82,7 @@ start "FoodLens Web" cmd /k "cd /d ""%WEB_CLIENT%"" && ""%PY_EXE%"" -m http.serv
 timeout /t 2 /nobreak >nul
 
 echo [3/3] Opening browser...
-start "" "http://127.0.0.1:8000"
+start "" "http://127.0.0.1:8000/?v=20260522r3"
 
 echo.
 echo Frontend: http://127.0.0.1:8000

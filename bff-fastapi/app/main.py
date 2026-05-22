@@ -40,10 +40,9 @@ async def analyze_text(req: AnalyzeTextRequest) -> AnalyzeFoodResponse:
     - Token 消耗 5000 倍降低 (文字 vs Base64 圖像)
     - 更快的響應速度
     - 保護隱私 (圖像不上傳)
+    
+    備註: 若食物列表為空，將使用 mock 數據作為回退
     """
-    if not req.food_items:
-        raise HTTPException(status_code=400, detail="food_items is required")
-
     try:
         return await analyze_text_with_ai(req)
     except Exception as exc:

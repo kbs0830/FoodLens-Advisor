@@ -164,6 +164,12 @@ async function handleImageSelect() {
     const file = imageInput.files[0];
     if (!file) return;
 
+    // 清空舊結果
+    detectionResult.style.display = 'none';
+    detectionResult.innerHTML = '';
+    resultEl.innerHTML = '';
+    detectionStatus.innerHTML = '';
+
     // 顯示預覽
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -197,16 +203,23 @@ async function performYoloDetection(imageElement) {
         // 執行檢測
         const detections = await detector.detectFood(imageElement);
         
-        // 顯示檢測結果
+        // 顯示檢測結果（即使食物為空也顯示）
         displayYoloResults(detections);
         
-        // 發送到後端進行 AI 分析
+        // 無論是否檢測到食物，都發送到後端進行 AI 分析
+        // 後端會在食物列表為空時使用 Mock 數據
         await analyzeWithBackend(detections);
         
     } catch (error) {
         detectionStatus.className = 'status error';
         detectionStatus.innerHTML = `❌ 檢測失敗: ${error.message}`;
         console.error('YOLO 檢測錯誤:', error);
+        
+        // 即使檢測失敗，也嘗試使用 Mock 數據進行分析
+        console.log('嘗試使用 Mock 數據作為回退...');
+        const emptyDetections = detector.getEmptyResult();
+        displayYoloResults(emptyDetections);
+        await analyzeWithBackend(emptyDetections);
     }
 }
 
@@ -214,19 +227,29 @@ async function performYoloDetection(imageElement) {
  * 顯示 YOLO 檢測結果
  */
 function displayYoloResults(detections) {
-    detectionStatus.className = 'status success';
-    detectionStatus.innerHTML = `✅ YOLO 檢測完成！檢測到 ${detections.detection_count} 種食物`;
+    if (detections.detection_count === 0) {
+        detectionStatus.className = 'status warning';
+        detectionStatus.innerHTML = `⚠️ YOLO 檢測完成，但未識別到食物`;
+    } else {
+        detectionStatus.className = 'status success';
+        detectionStatus.innerHTML = `✅ YOLO 檢測完成！檢測到 ${detections.detection_count} 種食物`;
+    }
     
     detectionResult.style.display = 'block';
+    
+    const foodListHtml = detections.food_items.length > 0
+        ? detections.food_items.map((item, i) => 
+            `<li>${item} (信心度: ${Math.round(detections.confidence_scores[i] * 100)}%)</li>`
+        ).join('')
+        : '<li style="color: #999;">無法識別具體食物</li>';
+    
     detectionResult.innerHTML = `
         <div class="detection-card">
             <h3>🔍 YOLO 檢測結果</h3>
             <div class="detection-item">
                 <strong>檢測到的食物：</strong>
                 <ul>
-                    ${detections.food_items.map((item, i) => 
-                        `<li>${item} (信心度: ${Math.round(detections.confidence_scores[i] * 100)}%)</li>`
-                    ).join('')}
+                    ${foodListHtml}
                 </ul>
             </div>
             <div class="detection-item">
@@ -242,13 +265,20 @@ function displayYoloResults(detections) {
  */
 async function analyzeWithBackend(yoloResults) {
     try {
-        // 檢查後端是否有新的 /api/v1/analyze-text 端點
-        // 如果沒有，則回退到原始 /api/v1/analyze-food 端點
-        
+        const confidenceScores = yoloResults.confidence_scores || [];
+        const avgConfidence = confidenceScores.length > 0
+            ? confidenceScores.reduce((sum, score) => sum + score, 0) / confidenceScores.length
+            : 0;
+
         const payload = {
-            food_items: yoloResults.food_items,
-            description: yoloResults.description,
-            locale: 'zh-TW'
+            food_items: yoloResults.food_items || [],
+            description: yoloResults.description || '未檢測到食物',
+            locale: 'zh-TW',
+            detector_build: window.YOLO_DETECTOR_BUILD || 'unknown',
+            detection_meta: {
+                detection_count: yoloResults.detection_count || 0,
+                average_confidence: Math.round(avgConfidence * 100) / 100
+            }
         };
 
         console.log('📤 發送到後端:', payload);
@@ -262,18 +292,33 @@ async function analyzeWithBackend(yoloResults) {
         });
 
         if (!response.ok) {
-            // 回退到舊的 analyze-food 端點
-            console.warn('新端點不可用，嘗試舊端點...');
+            // 即使新端點失敗，也嘗試舊端點
+            console.warn(`後端返回 ${response.status}，嘗試回退到舊端點...`);
             await fallbackToOldEndpoint(yoloResults);
             return;
         }
 
         const analysisResult = await response.json();
         displayResult(analysisResult);
+        detectionResult.innerHTML += `<p style="color: #4CAF50;"><small>✅ AI 分析完成</small></p>`;
         
     } catch (error) {
         console.error('後端分析失敗:', error);
-        detectionResult.innerHTML += `<p style="color: red;">❌ 後端分析失敗: ${error.message}</p>`;
+        detectionResult.innerHTML += `<p style="color: orange;"><small>⚠️ 分析結果錯誤: ${error.message}，使用 Mock 數據</small></p>`;
+        
+        // 最後的回退：使用 Mock 數據
+        displayResult({
+            food_items: ["chicken breast", "broccoli"],
+            estimated_calories_kcal: 312.0,
+            macros: { protein_g: 48.0, carbs_g: 8.0, fat_g: 9.0 },
+            rule_check: {
+                high_protein: true,
+                zero_starch: false,
+                zero_alcohol: true,
+                mild_not_spicy: true
+            },
+            next_meal_suggestion: "下一餐可增加葉菜類與水分，維持蛋白質攝取。"
+        });
     }
 }
 

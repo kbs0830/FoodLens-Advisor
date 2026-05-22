@@ -752,4 +752,225 @@ python app/main.py
 
 ---
 
+# 🎓 答辯專用技術附錄：YOLO 訓練、世代與參數（教授版）
 
+> 本章節提供可直接口頭答辯的「專業版」內容，包含模型世代、訓練流程、超參數、評估指標與部署限制。
+
+---
+
+## A. 先做名詞校正（非常重要）
+
+目前程式實際部署在前端的是 **TensorFlow.js 的 COCO-SSD**（`@tensorflow-models/coco-ssd@2`），
+不是 Ultralytics YOLO 權重直接上線。
+
+- 現行線上推論模型：COCO-SSD（Single-Stage Detector，MobileNet 系列 backbone）
+- 現行優勢：瀏覽器可直接跑、模型體積較小、部署成本低
+- 現行限制：食物細分類能力有限（因 COCO 類別以通用物件為主）
+
+答辯時建議說法：
+
+1. 「我們線上部署是 COCO-SSD，理由是 Web 端低延遲與部署穩定性。」
+2. 「若要提升食物細粒度辨識，下一步採 YOLOv8n 進行自建資料集訓練並量化部署。」
+
+---
+
+## B. YOLO 世代比較（教授常問）
+
+| 世代 | 代表特徵 | 優點 | 缺點 | 是否適合本專題 Web 端 |
+|------|----------|------|------|------------------------|
+| YOLOv3 | Darknet-53, Anchor-based | 經典穩定 | 精度與速度均非最新 | △ |
+| YOLOv4/v5 | 強化訓練技巧 + CSP | 社群成熟、工具多 | 模型家族多版本需治理 | ○ |
+| YOLOv7 | 結構與訓練策略優化 | 高效能 | 維護生態相對集中 | ○ |
+| **YOLOv8** | Anchor-free、解耦頭 | 訓練與部署便利、精度速度平衡佳 | Web 端轉換仍需工程化 | **◎（建議）** |
+| YOLOv9/v10/YOLO-World | 新架構/開放詞彙能力 | 研究前沿能力強 | 產線穩定性與工具鏈需驗證 | △ |
+
+結論（建議採用）：
+
+- **訓練世代建議：YOLOv8n（第 8 代，nano）**
+- 原因：在「可訓練、可解釋、可部署」三者中平衡最佳，適合課程專題答辯與實作落地
+
+---
+
+## C. 建議訓練資料設計（Food Domain）
+
+### C1. 資料來源策略
+
+1. 公開資料集：Food-101、UECFOOD-256、自蒐集餐盤影像
+2. 場景覆蓋：室內黃光、逆光、外食店、便當盒、托盤、近拍/遠拍
+3. 類別設計：先做 20~40 個高頻餐食類別（避免一開始類別過多導致稀疏）
+
+### C1-1. 建議類別藍圖（含水果與料理）
+
+建議把類別分成四大群組，這樣答辯時最容易說清楚資料治理邏輯：
+
+- 水果類：apple, banana, orange, grape, strawberry, pineapple, kiwi, watermelon, mango, pear
+- 主菜/蛋白質：chicken, beef, pork, fish, egg, shrimp, steak, tofu
+- 料理/餐點：rice, fried rice, noodles, pasta, salad, soup, burger, pizza, sandwich, curry, dumpling, sushi, ramen, stew
+- 飲品/配菜：milk, coffee, tea, juice, water bottle, wine glass（僅作場景物件）、broccoli, tomato, lettuce, potato, carrot, cucumber
+
+答辯說法：
+
+1. 「我們先以高頻、可區辨的食物類別為主，先求穩定再擴充長尾類別。」
+2. 「水果與料理類別分開建模，可降低類別混淆與標註噪音。」
+3. 「餐點場景的核心不是單一食物，而是『食物組合』與營養結構。」
+
+### C2. 標註規範（YOLO 格式）
+
+- 一張圖對應一個 `.txt` 標註檔
+- 每行格式：`class_id x_center y_center width height`（皆為 0~1 正規化）
+- 品質基準：遮擋食物至少標到可見主體、邊界框覆蓋比例 > 85%
+
+### C3. 切分策略
+
+- Train / Val / Test = **70 / 20 / 10**
+- 同一場景連拍影像不可跨集合（避免資料洩漏）
+
+---
+
+## D. YOLOv8 訓練流程（可重現）
+
+### D1. 環境
+
+- Python 3.10+
+- PyTorch 2.x（CUDA 11.8/12.x）
+- Ultralytics >= 8.x
+
+### D2. 標準訓練指令（建議版）
+
+```bash
+yolo detect train \
+  model=yolov8n.pt \
+  data=food_dataset.yaml \
+  imgsz=640 \
+  epochs=150 \
+  batch=16 \
+  optimizer=SGD \
+  lr0=0.01 \
+  lrf=0.01 \
+  momentum=0.937 \
+  weight_decay=0.0005 \
+  warmup_epochs=3 \
+  hsv_h=0.015 hsv_s=0.7 hsv_v=0.4 \
+  degrees=10 translate=0.1 scale=0.5 shear=2.0 perspective=0.0 \
+  flipud=0.0 fliplr=0.5 \
+  mosaic=1.0 mixup=0.1 copy_paste=0.0 \
+  workers=8 \
+  patience=30 \
+  cos_lr=True \
+  project=runs/foodlens \
+  name=yolov8n_food_v1
+```
+
+### D3. 推論/驗證常用參數
+
+| 參數 | 建議值 | 說明 |
+|------|--------|------|
+| conf | 0.25~0.40 | 置信度閾值，過低會提高誤檢 |
+| iou | 0.45~0.60 | NMS IoU，過高易留重複框 |
+| max_det | 100 | 單張最多目標數 |
+| imgsz | 640 | 精度與速度平衡 |
+| half | True（GPU） | FP16 推論提速 |
+
+---
+
+## E. 評估指標與答辯呈現方式
+
+### E1. 核心指標
+
+1. mAP@50
+2. mAP@50:95
+3. Precision / Recall
+4. FPS（或單張延遲 ms）
+5. 模型大小（MB）
+
+### E1-1. 建議補充指標（教授常追問）
+
+1. F1-score：平衡 Precision 與 Recall
+2. per-class AP：每一類水果/料理各自的 AP
+3. Confusion Matrix：看相似食物是否互相混淆
+4. Top-1 / Top-3 命中率：適合多餐點情境
+5. 推論穩定性：不同光線與不同距離下的結果波動
+
+### E2. 建議報表格式（可直接貼投影片）
+
+| 模型 | mAP@50 | mAP@50:95 | Precision | Recall | Latency(ms) | Size(MB) |
+|------|--------|-----------|-----------|--------|-------------|----------|
+| COCO-SSD (Web) | [填實測] | [填實測] | [填實測] | [填實測] | [填實測] | [填實測] |
+| YOLOv8n (Custom) | [填實測] | [填實測] | [填實測] | [填實測] | [填實測] | [填實測] |
+
+### E2-1. 答辯推薦結論指標
+
+- 若是 Web 即時展示，優先講 `Latency`、`Model Size`、`Precision`
+- 若是模型訓練成果，優先講 `mAP@50:95`、`F1-score`、`per-class AP`
+- 若是專題完整度，則補上 `Confusion Matrix` 與 `失敗案例分析`
+
+> 建議：答辯時務必區分「目前上線指標」與「離線訓練指標」，教授會特別看是否誠實揭露模型狀態。
+
+---
+
+## F. 從 YOLO 訓練到 Web 部署的工程路徑
+
+### F1. 路徑一（現況）
+
+COCO-SSD 直接在瀏覽器推論：
+
+- 優點：零後端影像處理、整合快
+- 缺點：類別受限於 COCO，不是餐食專用
+
+### F2. 路徑二（進階）
+
+YOLOv8 自訓練後轉部署（ONNX / TensorRT / Web 推論）
+
+1. `best.pt` 匯出 ONNX
+2. 依目標端做量化（FP16 / INT8）
+3. Web 端可考慮 ONNX Runtime Web 或 WebGPU 路徑
+4. 以相同驗證集重跑 mAP 與延遲做回歸驗證
+
+---
+
+## G. 本專題可直接回答教授的關鍵句
+
+1. 「我們目前線上是 COCO-SSD，重點在前端即時推論與隱私保護。」
+2. 「若教授要求可擴展性，我們設計了 YOLOv8n 自訓練流程，含完整超參數與資料治理策略。」
+3. 「評估採 mAP@50:95 + latency + 模型大小三軸，不只看單一精度。」
+4. 「實務上先保部署穩定，再以自建資料集逐步提升食物細分類能力。」
+
+5. 「如果要看 AI 結語，我們後端已把 Gemini 的總結獨立成 `ai_conclusion`，前端也會顯示。」
+
+---
+
+## G-1. Gemini 結語顯示與啟用說明
+
+- 若 `AI_PROVIDER=gemini`，且 `GEMINI_API_KEY` 正確設定，後端會使用 Gemini 生成 `ai_conclusion` 與 `next_meal_suggestion`
+- 若未設定 API Key，系統會自動退回 mock，這就是你看不到 Gemini 建議的主因
+- 前端會同時顯示 `AI 結語` 與 `建議`，避免只看到一段很短的文字
+
+建議 `.env` 設定：
+
+```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=你的金鑰
+VISION_PROVIDER=mock
+```
+
+> 說明：`VISION_PROVIDER` 仍可保留 `mock` 作為圖像分析備援，但 `AI_PROVIDER=gemini` 會讓文字分析端點優先走 Gemini。
+
+---
+
+## H. 建議補強清單（答辯前一週）
+
+- 補一份 20~30 張真實測試案例（成功/失敗各半）
+- 補混淆案例：相似食物（豬排 vs 雞排、炒飯 vs 燴飯）
+- 補場景對照：明亮、低光、反光餐具、遮擋
+- 補 1 張流程總圖（資料 -> 訓練 -> 驗證 -> 部署 -> 監控）
+
+---
+
+## I. 版本註記（避免答辯被質疑）
+
+- 文件目的：課堂專題答辯技術說明
+- 現行部署模型：COCO-SSD（前端）
+- 建議訓練模型：YOLOv8n（第 8 代，離線訓練路線）
+- 本章參數：提供可重現 baseline，需以你最終實測結果更新指標表
+
+---

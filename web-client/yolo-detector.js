@@ -13,6 +13,34 @@ const FOOD_CATEGORIES = [
     'water bottle', 'wine glass', 'beer glass'
 ];
 
+const YOLO_DETECTOR_BUILD = '2026-05-22-r3';
+console.log(`[YOLO] detector build: ${YOLO_DETECTOR_BUILD}`);
+window.YOLO_DETECTOR_BUILD = YOLO_DETECTOR_BUILD;
+
+const PRIMARY_CONFIDENCE_THRESHOLD = 0.35;
+const FALLBACK_CONFIDENCE_THRESHOLD = 0.55;
+
+const NON_FOOD_OBJECTS = new Set([
+    'person', 'dog', 'cat', 'car', 'truck', 'bus', 'train', 'bike',
+    'motorcycle', 'tree', 'building', 'wall', 'floor', 'ceiling',
+    'chair', 'sofa', 'bed', 'door', 'window', 'shoe', 'shirt', 'pants',
+    'hat', 'phone', 'computer', 'monitor', 'keyboard', 'mouse'
+]);
+
+const FOOD_ALIAS_MAP = {
+    'hot dog': 'hot dog',
+    donut: 'donut',
+    doughnut: 'donut',
+    'wine glass': 'drink',
+    bottle: 'drink',
+    cup: 'drink',
+    bowl: 'mixed meal',
+    spoon: 'meal',
+    fork: 'meal',
+    knife: 'meal',
+    plate: 'meal'
+};
+
 class YOLOFoodDetector {
     constructor() {
         this.model = null;
@@ -46,17 +74,54 @@ class YOLOFoodDetector {
             await this.loadModel();
         }
 
+        // 確保圖像完全加載
+        return new Promise((resolve) => {
+            if (imageElement.complete) {
+                this._performDetection(imageElement).then(resolve);
+            } else {
+                imageElement.onload = () => {
+                    this._performDetection(imageElement).then(resolve);
+                };
+                imageElement.onerror = () => {
+                    console.error('❌ 圖像加載失敗');
+                    resolve(this._generateEmptyResult());
+                };
+            }
+        });
+    }
+
+    /**
+     * 執行實際的檢測
+     */
+    async _performDetection(imageElement) {
         console.log('🔍 正在分析圖像...');
         try {
-            const predictions = await this.model.estimateObjects(imageElement);
+            // 相容不同模型 API：優先 detect()，舊版回退 estimateObjects()
+            let predictions;
+            if (this.model && typeof this.model.detect === 'function') {
+                predictions = await this.model.detect(imageElement);
+            } else if (this.model && typeof this.model.estimateObjects === 'function') {
+                predictions = await this.model.estimateObjects(imageElement);
+            } else {
+                throw new TypeError('模型不支援 detect() 或 estimateObjects()');
+            }
+            
+            console.log('📊 COCO-SSD 原始預測:', predictions);
+            console.log('📊 檢測到的物體數量:', predictions.length);
             
             // 篩選食物相關類別
             const foodDetections = predictions.filter(pred => 
-                this.isFoodCategory(pred.class)
+                pred.score >= PRIMARY_CONFIDENCE_THRESHOLD && this.isFoodCategory(pred.class)
             );
 
             if (foodDetections.length === 0) {
-                console.warn('⚠️ 未檢測到食物');
+                console.warn('⚠️ 未檢測到明確食物，嘗試高信心候選項...');
+                const allDetections = predictions.filter(pred => pred.score >= FALLBACK_CONFIDENCE_THRESHOLD);
+                if (allDetections.length > 0) {
+                    console.log('✅ 高信心候選項:', allDetections.map(p => `${p.class}(${Math.round(p.score*100)}%)`));
+                    return this._formatDetections(allDetections);
+                }
+                console.warn('⚠️ 圖像中沒有檢測到任何物體');
                 return this._generateEmptyResult();
             }
 
@@ -69,6 +134,7 @@ class YOLOFoodDetector {
 
         } catch (error) {
             console.error('❌ 檢測失敗:', error);
+            console.error('❌ 錯誤堆棧:', error.stack);
             return this._generateEmptyResult();
         }
     }
@@ -78,34 +144,52 @@ class YOLOFoodDetector {
      */
     isFoodCategory(className) {
         const normalizedClass = className.toLowerCase();
+        if (NON_FOOD_OBJECTS.has(normalizedClass)) {
+            return false;
+        }
         
         // 直接檢查清單
         if (FOOD_CATEGORIES.includes(normalizedClass)) {
             return true;
         }
 
-        // 關鍵字檢查
+        // 關鍵字檢查 - 更寬鬆的食物檢測
         const foodKeywords = [
             'food', 'fruit', 'vegetable', 'meat', 'fish', 'chicken', 
             'beef', 'pork', 'bread', 'rice', 'pasta', 'noodle', 'dish',
             'plate', 'bowl', 'pizza', 'burger', 'sandwich', 'salad',
             'soup', 'ice cream', 'cake', 'cookie', 'donut', 'coffee',
             'tea', 'juice', 'milk', 'cheese', 'egg', 'apple', 'orange',
-            'banana', 'carrot', 'potato', 'tomato', 'onion', 'garlic'
+            'banana', 'carrot', 'potato', 'tomato', 'onion', 'garlic',
+            'dining', 'restaurant', 'kitchen', 'prepared',
+            'cooked', 'fresh', 'baked', 'grilled', 'fried', 'boiled'
         ];
 
-        return foodKeywords.some(keyword => normalizedClass.includes(keyword));
+        const isFood = foodKeywords.some(keyword => normalizedClass.includes(keyword));
+        
+        if (isFood) {
+            return true;
+        }
+
+        return false;
+    }
+
+    normalizeFoodLabel(className) {
+        const normalizedClass = className.toLowerCase();
+        if (FOOD_ALIAS_MAP[normalizedClass]) {
+            return FOOD_ALIAS_MAP[normalizedClass];
+        }
+        return normalizedClass;
     }
 
     /**
      * 格式化檢測結果
      */
     _formatDetections(detections) {
-        // 按信心度排序並去重
         const foodItems = detections
             .sort((a, b) => b.score - a.score)
             .map(d => ({
-                item: d.class,
+                item: this.normalizeFoodLabel(d.class),
                 confidence: Math.round(d.score * 100) / 100
             }));
 
@@ -120,15 +204,22 @@ class YOLOFoodDetector {
             }
         }
 
+        const filteredFoods = uniqueFoods.filter(food => {
+            if (food.item === 'meal' || food.item === 'mixed meal') {
+                return food.confidence >= FALLBACK_CONFIDENCE_THRESHOLD;
+            }
+            return true;
+        });
+
         // 生成自然語言描述
-        const description = this._generateDescription(uniqueFoods);
+        const description = this._generateDescription(filteredFoods);
 
         return {
-            food_items: uniqueFoods.map(f => f.item),
-            confidence_scores: uniqueFoods.map(f => f.confidence),
+            food_items: filteredFoods.map(f => f.item),
+            confidence_scores: filteredFoods.map(f => f.confidence),
             description: description,
-            detection_count: uniqueFoods.length,
-            raw_detections: uniqueFoods
+            detection_count: filteredFoods.length,
+            raw_detections: filteredFoods
         };
     }
 
@@ -140,27 +231,39 @@ class YOLOFoodDetector {
             return '無法識別食物';
         }
 
-        const items = foods.slice(0, 5).map((f, i) => {
+        const items = foods.slice(0, 5).map((f) => {
             const confidence = Math.round(f.confidence * 100);
             return `${f.item} (${confidence}% 信心度)`;
         }).join(', ');
 
         const ending = foods.length > 5 ? `及其他 ${foods.length - 5} 種食物` : '';
+        const avgConfidence = Math.round(
+            foods.reduce((sum, food) => sum + food.confidence, 0) / foods.length * 100
+        );
 
-        return `檢測到: ${items}${ending}。`;
+        return `檢測到: ${items}${ending}。平均信心度約 ${avgConfidence}%。`;
     }
 
     /**
      * 生成空結果
      */
     _generateEmptyResult() {
-        return {
+        const emptyResult = {
             food_items: [],
             confidence_scores: [],
             description: '無法識別食物，請嘗試上傳更清晰的圖像。',
             detection_count: 0,
             raw_detections: []
         };
+        console.warn('⚠️ 返回空結果:', emptyResult);
+        return emptyResult;
+    }
+
+    /**
+     * 公開方法：獲取空結果（用於前端回退）
+     */
+    getEmptyResult() {
+        return this._generateEmptyResult();
     }
 
     /**

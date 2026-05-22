@@ -1,4 +1,5 @@
 import os
+import json
 from app.schemas import AnalyzeFoodRequest, AnalyzeTextRequest, AnalyzeFoodResponse, DietaryRuleCheck, MacroNutrients
 
 
@@ -21,10 +22,26 @@ YOLO_TEXT_SYSTEM_PROMPT = (
 )
 
 
+def _get_gemini_client():
+    """初始化 Gemini API 客戶端"""
+    try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return None
+        genai.configure(api_key=api_key)
+        return genai
+    except ImportError:
+        return None
+
+
 async def analyze_with_provider(req: AnalyzeFoodRequest) -> AnalyzeFoodResponse:
     """原始的圖像分析功能（保持相容性）"""
     provider = os.getenv("VISION_PROVIDER", "mock").lower()
 
+    if provider == "gemini":
+        return await _analyze_with_gemini(req.image_base64)
+    
     if provider == "mock":
         return AnalyzeFoodResponse(
             food_items=["chicken breast", "broccoli"],
@@ -55,26 +72,180 @@ async def analyze_with_provider(req: AnalyzeFoodRequest) -> AnalyzeFoodResponse:
     )
 
 
+async def _analyze_with_gemini(image_base64: str) -> AnalyzeFoodResponse:
+    """使用 Gemini Vision API 分析圖像"""
+    import base64
+    
+    try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise Exception("缺少 GEMINI_API_KEY")
+        
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro-vision')
+        
+        # 解碼 base64 圖像
+        image_data = base64.b64decode(image_base64)
+        
+        # 構建提示
+        prompt = (
+            "請分析這張食物照片，並返回 JSON 格式的結果。"
+            "JSON 應包含以下字段："
+            "{"
+            '"food_items": ["食物1", "食物2", ...], '
+            '"estimated_calories_kcal": 數字, '
+            '"protein_g": 蛋白質克數, '
+            '"carbs_g": 碳水克數, '
+            '"fat_g": 脂肪克數, '
+            '"high_protein": 布爾值, '
+            '"zero_starch": 布爾值, '
+            '"zero_alcohol": 布爾值, '
+            '"mild_not_spicy": 布爾值, '
+            '"next_meal_suggestion": "建議文字"'
+            "}"
+        )
+        
+        # 調用 API
+        response = model.generate_content([
+            {"mime_type": "image/jpeg", "data": image_data},
+            prompt
+        ])
+        
+        # 解析響應
+        text = response.text
+        # 從 markdown 代碼塊中提取 JSON
+        if "```json" in text:
+            json_str = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            json_str = text.split("```")[1].split("```")[0].strip()
+        else:
+            json_str = text
+        
+        data = json.loads(json_str)
+        
+        return AnalyzeFoodResponse(
+            food_items=data.get("food_items", []),
+            estimated_calories_kcal=float(data.get("estimated_calories_kcal", 0)),
+            macros=MacroNutrients(
+                protein_g=float(data.get("protein_g", 0)),
+                carbs_g=float(data.get("carbs_g", 0)),
+                fat_g=float(data.get("fat_g", 0))
+            ),
+            rule_check=DietaryRuleCheck(
+                high_protein=bool(data.get("high_protein", False)),
+                zero_starch=bool(data.get("zero_starch", False)),
+                zero_alcohol=bool(data.get("zero_alcohol", True)),
+                mild_not_spicy=bool(data.get("mild_not_spicy", True))
+            ),
+            next_meal_suggestion=data.get("next_meal_suggestion", "")
+        )
+    
+    except Exception as e:
+        print(f"Gemini 分析失敗: {e}")
+        raise
+
+
 async def analyze_text_with_ai(req: AnalyzeTextRequest) -> AnalyzeFoodResponse:
     """新增: 使用 YOLO 檢測結果進行文字分析
     
     此功能使用 YOLO 前端檢測的文字結果，而非圖像。
     大幅降低 token 消耗 (~5000x)
+    
+    若食物列表為空，提供 mock 數據作為回退
     """
-    provider = os.getenv("AI_PROVIDER", "mock").lower()
+    try:
+        # 若食物列表為空，使用 mock 數據
+        if not req.food_items or len(req.food_items) == 0:
+            print("[WARN] 食物列表為空，使用 Mock 數據作為回退")
+            return _create_analysis_response(["chicken breast", "broccoli"])
+        
+        provider = os.getenv("AI_PROVIDER", os.getenv("VISION_PROVIDER", "mock")).lower()
+        print(f"[INFO] AI_PROVIDER: {provider}")
 
-    # 構建食物描述字符串
-    food_str = ", ".join(req.food_items)
-    full_prompt = f"檢測到的食物: {food_str}\n\n{req.description}"
+        # 構建食物描述字符串
+        food_str = ", ".join(req.food_items)
+        full_prompt = f"檢測到的食物: {food_str}\n\n{req.description}"
 
-    if provider == "mock":
-        # Mock 分析結果
+        if provider == "gemini":
+            try:
+                return await _analyze_text_with_gemini(req.food_items, full_prompt)
+            except Exception as gemini_error:
+                print(f"[WARN] Gemini 分析失敗: {gemini_error}，回退到 Mock")
+                return _create_analysis_response(req.food_items)
+
+        if provider == "mock":
+            # Mock 分析結果
+            return _create_analysis_response(req.food_items)
+
+        # 預設回退到 mock
+        print(f"[WARN] 未知的 provider: {provider}，回退到 Mock")
         return _create_analysis_response(req.food_items)
+    
+    except Exception as e:
+        print(f"[ERROR] analyze_text_with_ai 發生錯誤: {e}")
+        print(f"[ERROR] 錯誤類型: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        # 最後的回退
+        return _create_analysis_response(["chicken breast", "broccoli"])
 
-    # TODO: 整合真實 AI (OpenAI, Gemini)
-    # 如果有真實 API 密鑰，調用外部 AI 服務
-    # 否則回退到 mock
-    return _create_analysis_response(req.food_items)
+
+async def _analyze_text_with_gemini(food_items: list, description: str) -> AnalyzeFoodResponse:
+    """使用 Gemini 進行文字分析"""
+    try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise Exception("缺少 GEMINI_API_KEY")
+        
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro')
+        
+        prompt = (
+            f"{YOLO_TEXT_SYSTEM_PROMPT}\n\n"
+            f"檢測到的食物清單: {', '.join(food_items)}\n"
+            f"描述: {description}\n\n"
+            "請返回 JSON 格式的分析結果。"
+        )
+        
+        print(f"[INFO] 發送到 Gemini: {prompt[:100]}...")
+        response = model.generate_content(prompt)
+        text = response.text
+        print(f"[INFO] Gemini 響應: {text[:100]}...")
+        
+        # 從 markdown 代碼塊中提取 JSON
+        if "```json" in text:
+            json_str = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            json_str = text.split("```")[1].split("```")[0].strip()
+        else:
+            json_str = text
+        
+        data = json.loads(json_str)
+        
+        return AnalyzeFoodResponse(
+            food_items=data.get("food_items", food_items),
+            estimated_calories_kcal=float(data.get("estimated_calories_kcal", 0)),
+            macros=MacroNutrients(
+                protein_g=float(data.get("protein_g", 0)),
+                carbs_g=float(data.get("carbs_g", 0)),
+                fat_g=float(data.get("fat_g", 0))
+            ),
+            rule_check=DietaryRuleCheck(
+                high_protein=bool(data.get("high_protein", False)),
+                zero_starch=bool(data.get("zero_starch", False)),
+                zero_alcohol=bool(data.get("zero_alcohol", True)),
+                mild_not_spicy=bool(data.get("mild_not_spicy", True))
+            ),
+            next_meal_suggestion=data.get("next_meal_suggestion", "")
+        )
+    
+    except Exception as e:
+        print(f"[ERROR] Gemini 文字分析失敗: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 def _create_analysis_response(food_items: list) -> AnalyzeFoodResponse:
