@@ -1,12 +1,12 @@
 # FoodLens-Advisor
 
-Thin Client + Cloud Brain 的 Android 飲食分析系統。
+Thin Client + Cloud Brain 的 Web 飲食分析系統。
 
 ## 一鍵啟動
 
-- 直接執行根目錄的 [start-bff.ps1](start-bff.ps1)
-- 或在 VS Code 執行任務 `Start FoodLens BFF`
-- 啟動後會自動打開 `http://127.0.0.1:8080/health`
+- 直接執行根目錄的 [start-all.bat](start-all.bat)（同時啟動 BFF + Web）
+- 只啟動後端可使用 [start-bff.ps1](start-bff.ps1)
+- 啟動後可訪問 `http://127.0.0.1:8000`（前端）與 `http://127.0.0.1:8080/health`（後端）
 
 ## BFF 快速啟動
 
@@ -14,17 +14,10 @@ Thin Client + Cloud Brain 的 Android 飲食分析系統。
 2. 建立環境並安裝：`pip install -r requirements.txt`
 3. 啟動：`python app/main.py`
 
-## Android 客戶端
-
-1. 用 Android Studio 開啟 [android-client](android-client)
-2. 等 Gradle Sync 完成
-3. 按 Run 執行
-4. 先按畫面上的「測試 BFF 連線」按鈕
-
 ## 測試結果
 
 - 健康檢查：`GET /health`
-- 分析 API：`POST /api/v1/analyze-food`
+- 分析 API：`POST /api/v1/analyze-food`、`POST /api/v1/analyze-text`
 
 ## Web Client
 
@@ -60,31 +53,15 @@ python -m http.server 8000
 - CSS3（漸層、動畫）
 - Vanilla JavaScript（Fetch API）
 
-## Android 客戶端（補充）
+### 新模型（Food Classifier）
 
-此資料夾含可編譯的 Android 最小專案（Kotlin + Compose + Retrofit）。
+前端已加入 TFJS 食物分類模型支援，用於補強 YOLO/COCO-SSD 的辨識豐富度。
 
-### 快速啟動
+請將模型檔案放在：
 
-1. 用 Android Studio 開啟 `android-client`。
-2. 等待 Gradle Sync 完成。
-3. 選擇模擬器或實機後執行 Run。
+- `web-client/models/food101/model.json`
+- `web-client/models/food101/group1-shard*.bin`
 
-### 已完成項目
+若你使用不同模型，請同步更新 [web-client/yolo-detector.js](web-client/yolo-detector.js) 內的
+`FOOD_CLASSIFIER_MODEL_URL` 與 `FOOD101_LABELS`。
 
-- `MainActivity` + Compose 首頁
-- `NetworkModule`（Retrofit + OkHttp）
-- `FoodAnalysisViewModel` / `Repository`
-- 點擊按鈕可送出測試 Base64 到 BFF `/api/v1/analyze-food`
-
-### BFF 位址設定
-
-- 檔案：`app/src/main/java/com/foodlens/advisor/network/NetworkModule.kt`
-- 模擬器建議：`http://10.0.2.2:8080/`
-- 實體手機請改成你電腦在同網段的 IP，例如：`http://192.168.1.10:8080/`
-
-### 下一步
-
-- CameraX 拍照與壓縮串接到 `ImageEncoder`
-- 將測試 payload 換成實拍圖片 Base64
-- AI 真實 provider（OpenAI / Gemini）待後續補上

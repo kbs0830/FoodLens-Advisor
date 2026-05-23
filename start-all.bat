@@ -1,9 +1,9 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
-set "WEB_CLIENT=%ROOT%foodlens-web\web-client"
-set "BFF_DIR=%ROOT%foodlens-web\bff-fastapi"
+set "WEB_CLIENT=%ROOT%web-client"
+set "BFF_DIR=%ROOT%bff-fastapi"
 
 rem Ensure console uses UTF-8 to avoid garbled logs on Windows
 chcp 65001 >nul
@@ -31,6 +31,7 @@ if not exist "%BFF_DIR%\app\main.py" (
 
 set "LOG_DIR=%ROOT%logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+set "WEB_INDEX=%WEB_CLIENT%\index.html"
 
 rem --- find python executable (prefer venv inside BFF, then repo venv, then system)
 set "PY_EXE="
@@ -64,32 +65,15 @@ if defined PID8080 (
 
 echo [1/3] Starting BFF (uvicorn) using %PY_EXE%...
 start "FoodLens BFF" cmd /k "cd /d ""%BFF_DIR%"" && ""%PY_EXE%"" -m uvicorn app.main:app --host 0.0.0.0 --port 8080 > ""%LOG_DIR%\bff.log"" 2>&1"
-
-timeout /t 2 /nobreak >nul
-
-rem --- Start web server if port 8000 is free
-echo [2/3] Checking port 8000 for web server...
-set "PID8000="
-for /f "tokens=5" %%b in ('netstat -aon ^| findstr ":8000" ^| findstr "LISTENING"') do set "PID8000=%%b"
-if defined PID8000 (
-    echo [WARN] Port 8000 in use by PID %PID8000%. Attempting to terminate... See %LOG_DIR%\web_stop.log
-    taskkill /PID %PID8000% /F > "%LOG_DIR%\web_stop.log" 2>&1 || echo [WARN] taskkill failed >> "%LOG_DIR%\web_stop.log"
-    timeout /t 1 /nobreak >nul
-)
-echo [2/3] Starting web server (http.server)...
-start "FoodLens Web" cmd /k "cd /d ""%WEB_CLIENT%"" && ""%PY_EXE%"" -m http.server 8000 > ""%LOG_DIR%\web.log"" 2>&1"
-
-timeout /t 2 /nobreak >nul
-
+:open_browser
 echo [3/3] Opening browser...
-start "" "http://127.0.0.1:8000/?v=20260522r3"
+start "" "%WEB_INDEX%"
 
 echo.
-echo Frontend: http://127.0.0.1:8000
+echo Frontend: %WEB_INDEX%
 echo Backend : http://127.0.0.1:8080
 echo Logs    : %LOG_DIR%
 echo.
-echo Press any key to close this window.
-pause >nul
+echo Launcher finished.
 
 endlocal

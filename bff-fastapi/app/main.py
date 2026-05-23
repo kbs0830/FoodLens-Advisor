@@ -5,15 +5,31 @@ if __name__ == "__main__" and __package__ is None:
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from fastapi import FastAPI, HTTPException
-from app.schemas import AnalyzeFoodRequest, AnalyzeTextRequest, AnalyzeFoodResponse
+from fastapi.middleware.cors import CORSMiddleware
+from app.schemas import (
+    AnalyzeFoodRequest,
+    AnalyzeTextRequest,
+    AnalyzeFoodResponse,
+    DetectFoodRequest,
+    DetectFoodResponse,
+)
+from app.services.detection_service import detect_food_from_image
 from app.services.vision_service import analyze_with_provider, analyze_text_with_ai
 
 
 app = FastAPI(title="FoodLens Advisor BFF", version="0.2.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
-async def health() -> dict:
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -27,6 +43,18 @@ async def analyze_food(req: AnalyzeFoodRequest) -> AnalyzeFoodResponse:
         return await analyze_with_provider(req)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"analysis failed: {exc}") from exc
+
+
+@app.post("/api/v1/detect-food", response_model=DetectFoodResponse)
+async def detect_food(req: DetectFoodRequest) -> DetectFoodResponse:
+    """使用 YOLO 偵測圖片中的食物"""
+    if not req.image_base64:
+        raise HTTPException(status_code=400, detail="image_base64 is required")
+
+    try:
+        return detect_food_from_image(req)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"detection failed: {exc}") from exc
 
 
 @app.post("/api/v1/analyze-text", response_model=AnalyzeFoodResponse)

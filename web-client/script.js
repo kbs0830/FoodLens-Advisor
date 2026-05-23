@@ -60,6 +60,27 @@ async function analyzeSampleFood() {
 
 function displayResult(data) {
     const proteinProgress = Math.min((data.macros.protein_g / 40) * 100, 100);
+
+    const nextMealOptions = Array.isArray(data.next_meal_options)
+        ? data.next_meal_options.filter(Boolean)
+        : [];
+    const nutritionTips = Array.isArray(data.nutrition_tips)
+        ? data.nutrition_tips.filter(Boolean)
+        : [];
+    const dietWarnings = Array.isArray(data.diet_warnings)
+        ? data.diet_warnings.filter(Boolean)
+        : [];
+    const confidenceNote = (data.confidence_note || '').trim();
+
+    const nextMealOptionsHtml = nextMealOptions.length > 0
+        ? `<ul>${nextMealOptions.map(item => `<li>${item}</li>`).join('')}</ul>`
+        : '';
+    const nutritionTipsHtml = nutritionTips.length > 0
+        ? `<ul>${nutritionTips.map(item => `<li>${item}</li>`).join('')}</ul>`
+        : '';
+    const dietWarningsHtml = dietWarnings.length > 0
+        ? `<ul>${dietWarnings.map(item => `<li>${item}</li>`).join('')}</ul>`
+        : '';
     
     const rulesHtml = [
         ['高蛋白', data.rule_check.high_protein],
@@ -108,10 +129,41 @@ function displayResult(data) {
                     ${rulesHtml}
                 </div>
             </div>
+
+            <div class="result-item">
+                <strong>🧠 AI 結語：</strong> ${data.ai_conclusion || data.next_meal_suggestion}
+            </div>
             
             <div class="result-item">
                 <strong>🎯 建議：</strong> ${data.next_meal_suggestion}
             </div>
+
+            ${nextMealOptionsHtml ? `
+            <div class="result-item">
+                <strong>🍱 更多餐點建議：</strong>
+                ${nextMealOptionsHtml}
+            </div>
+            ` : ''}
+
+            ${nutritionTipsHtml ? `
+            <div class="result-item">
+                <strong>📌 營養提示：</strong>
+                ${nutritionTipsHtml}
+            </div>
+            ` : ''}
+
+            ${dietWarningsHtml ? `
+            <div class="result-item">
+                <strong>⚠️ 注意事項：</strong>
+                ${dietWarningsHtml}
+            </div>
+            ` : ''}
+
+            ${confidenceNote ? `
+            <div class="result-item">
+                <strong>🧪 可信度提示：</strong> ${confidenceNote}
+            </div>
+            ` : ''}
         </div>
     `;
 }
@@ -173,11 +225,12 @@ async function handleImageSelect() {
     // 顯示預覽
     const reader = new FileReader();
     reader.onload = async (e) => {
-        previewImage.src = e.target.result;
+        const imageDataUrl = e.target.result;
+        previewImage.src = imageDataUrl;
         previewImage.style.display = 'block';
         
         // 開始 YOLO 檢測
-        await performYoloDetection(previewImage);
+        await performYoloDetection(previewImage, imageDataUrl);
     };
     reader.readAsDataURL(file);
 }
@@ -185,23 +238,14 @@ async function handleImageSelect() {
 /**
  * 執行 YOLO 檢測
  */
-async function performYoloDetection(imageElement) {
+async function performYoloDetection(imageElement, imageBase64) {
     detectionStatus.style.display = 'block';
     detectionStatus.className = 'status loading';
-    detectionStatus.innerHTML = '<span class="spinner"></span>🤖 正在執行 YOLO 檢測...';
+    detectionStatus.innerHTML = '<span class="spinner"></span>🤖 正在執行食物偵測...';
     
     try {
-        // 載入模型（第一次）
-        if (!detector.isLoaded) {
-            detectionStatus.innerHTML = '<span class="spinner"></span>載入 YOLO 模型中...';
-            const modelLoaded = await detector.loadModel();
-            if (!modelLoaded) {
-                throw new Error('模型載入失敗');
-            }
-        }
-
-        // 執行檢測
-        const detections = await detector.detectFood(imageElement);
+        detectionStatus.innerHTML = '<span class="spinner"></span>連線到後端 YOLO 偵測中...';
+        const detections = await detectFoodWithBackend(imageBase64);
         
         // 顯示檢測結果（即使食物為空也顯示）
         displayYoloResults(detections);
@@ -221,6 +265,31 @@ async function performYoloDetection(imageElement) {
         displayYoloResults(emptyDetections);
         await analyzeWithBackend(emptyDetections);
     }
+}
+
+/**
+ * 透過後端 YOLO 偵測食物
+ */
+async function detectFoodWithBackend(imageBase64) {
+    const payload = {
+        image_base64: imageBase64,
+        locale: 'zh-TW',
+        detector_build: window.YOLO_DETECTOR_BUILD || 'backend-yolo-v1',
+    };
+
+    const response = await fetch(`${BFF_URL}/api/v1/detect-food`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
 }
 
 /**

@@ -1,8 +1,8 @@
 # 📚 FoodLens Advisor 項目概覽
 
-**最後更新**: 2026年5月19日  
-**版本**: v0.2.0  
-**分支**: `web-dev` (網站版本)  
+**最後更新**: 2026年5月23日  
+**版本**: v0.3.0  
+**分支**: `main` (網站版本)  
 
 ---
 
@@ -44,6 +44,7 @@
 | `web-client/script.js` | 主程式邏輯 | ✅ 新增 YOLO 集成 |
 | `web-client/yolo-detector.js` | **新增** YOLO 檢測模組 | ✨ 全新文件 |
 | `web-client/style.css` | 樣式表 | ✅ 新增檢測相關樣式 |
+| `web-client/models/food101/` | **新增** 食物分類模型 | ✅ 支援 TFJS Food Classifier |
 
 #### 資源文件
 | 文件 | 說明 |
@@ -69,7 +70,7 @@
 ### 步驟 1: 啟動 BFF
 
 ```bash
-cd foodlens-web\bff-fastapi
+cd bff-fastapi
 python app/main.py
 ```
 
@@ -78,7 +79,7 @@ python app/main.py
 ### 步驟 2: 啟動前端
 
 ```bash
-cd foodlens-web\web-client
+cd web-client
 python -m http.server 8000
 ```
 
@@ -102,7 +103,7 @@ python -m http.server 8000
 **檔案**: [`web-client/yolo-detector.js`](web-client/yolo-detector.js)
 
 ```javascript
-// 使用 TensorFlow.js + COCO-SSD
+// 使用 TensorFlow.js + COCO-SSD + Food Classifier
 const detector = new YOLOFoodDetector();
 const results = await detector.detectFood(imageElement);
 
@@ -339,21 +340,22 @@ OPENAI_API_KEY=sk-...
 
 ### 架構精華
 
-本專案採用 YOLO 前端檢測 + AI 後端分析的混合架構，重點如下：
+本專案採用前端檢測 + AI 後端分析的混合架構，重點如下：
 
-- 前端: `web-client/`，使用 TensorFlow.js 或 YOLOv5n 進行食物檢測。
+- 前端: `web-client/`，使用 TensorFlow.js + COCO-SSD + Food Classifier 進行食物辨識。
 - 後端: `bff-fastapi/`，提供 `POST /api/v1/analyze-text` 與 `/api/v1/analyze-food`。
 - 優勢: Token/成本大幅降低、圖像不直接上傳、可離線檢測。
 
 ### 文件與檔案結構重點
 
 ```
-foodlens-web/
-├── bff-fastapi/  # 後端
-├── web-client/   # 前端
-├── android-client/ (deprecated)
-└── docs/         # 文檔與備份
+FoodLens-Advisor/
+├── bff-fastapi/   # 後端
+├── web-client/    # 前端
+├── docs/          # 文檔
+├── start-all.bat  # 一鍵啟動
+├── start-bff.ps1  # 只啟動後端
+├── README.md
+└── PROJECT_OVERVIEW.md
 ```
-
-（完整細節已備份於 `docs/duplicates_backup/ARCHITECTURE_DESIGN.md` 與 `docs/duplicates_backup/FILE_STRUCTURE.md`）
 

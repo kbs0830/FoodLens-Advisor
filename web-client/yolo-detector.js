@@ -13,12 +13,44 @@ const FOOD_CATEGORIES = [
     'water bottle', 'wine glass', 'beer glass'
 ];
 
-const YOLO_DETECTOR_BUILD = '2026-05-22-r3';
+const FOOD101_LABELS = [
+    'apple pie', 'baby back ribs', 'baklava', 'beef carpaccio', 'beef tartare',
+    'beet salad', 'beignets', 'bibimbap', 'bread pudding', 'breakfast burrito',
+    'bruschetta', 'caesar salad', 'cannoli', 'caprese salad', 'carrot cake',
+    'ceviche', 'cheesecake', 'cheese plate', 'chicken curry', 'chicken quesadilla',
+    'chicken wings', 'chocolate cake', 'chocolate mousse', 'churros', 'clam chowder',
+    'club sandwich', 'crab cakes', 'creme brulee', 'croque madame', 'cup cakes',
+    'deviled eggs', 'donuts', 'dumplings', 'edamame', 'eggs benedict', 'escargots',
+    'falafel', 'filet mignon', 'fish and chips', 'foie gras', 'french fries',
+    'french onion soup', 'french toast', 'fried calamari', 'fried rice',
+    'frozen yogurt', 'garlic bread', 'gnocchi', 'greek salad',
+    'grilled cheese sandwich', 'grilled salmon', 'guacamole', 'gyoza', 'hamburger',
+    'hot and sour soup', 'hot dog', 'huevos rancheros', 'hummus', 'ice cream',
+    'lasagna', 'lobster bisque', 'lobster roll sandwich', 'macaroni and cheese',
+    'macarons', 'miso soup', 'mussels', 'nachos', 'omelette', 'onion rings',
+    'oysters', 'pad thai', 'paella', 'pancakes', 'panna cotta', 'peking duck',
+    'pho', 'pizza', 'pork chop', 'poutine', 'prime rib', 'pulled pork sandwich',
+    'ramen', 'ravioli', 'red velvet cake', 'risotto', 'samosa', 'sashimi',
+    'scallops', 'seaweed salad', 'shrimp and grits', 'spaghetti bolognese',
+    'spaghetti carbonara', 'spring rolls', 'steak', 'strawberry shortcake',
+    'sushi', 'tacos', 'takoyaki', 'tiramisu', 'tuna tartare', 'waffles'
+];
+
+const YOLO_DETECTOR_BUILD = '2026-05-23-r1';
 console.log(`[YOLO] detector build: ${YOLO_DETECTOR_BUILD}`);
 window.YOLO_DETECTOR_BUILD = YOLO_DETECTOR_BUILD;
 
 const PRIMARY_CONFIDENCE_THRESHOLD = 0.35;
 const FALLBACK_CONFIDENCE_THRESHOLD = 0.55;
+const CLASSIFIER_TOP_K = 5;
+const CLASSIFIER_MIN_CONFIDENCE = 0.25;
+const FOOD_CLASSIFIER_MODEL_URLS = [
+    'models/food101/model.json',
+    './models/food101/model.json',
+    'https://storage.googleapis.com/tfjs-models/tfjs/food101/model.json'
+];
+const FOOD_CLASSIFIER_INPUT_SIZE = 224;
+const FOOD_CLASSIFIER_ENABLED = true;
 
 const NON_FOOD_OBJECTS = new Set([
     'person', 'dog', 'cat', 'car', 'truck', 'bus', 'train', 'bike',
@@ -46,22 +78,66 @@ class YOLOFoodDetector {
         this.model = null;
         this.isLoaded = false;
         this.detectionResults = null;
+        this.classifier = null;
+        this.classifierLoaded = false;
+        this.classifierLoadAttempted = false;
     }
 
     /**
-     * 載入 COCO-SSD 模型
+     * 載入食物分類模型與 COCO-SSD 回退模型
      */
     async loadModel() {
-        console.log('🤖 正在載入 YOLO 模型...');
+        console.log('🤖 正在載入食物專用模型...');
         try {
+            await this.loadClassifier();
+            if (this.classifierLoaded) {
+                this.isLoaded = true;
+                console.log('✅ 食物分類模型載入成功！');
+                return true;
+            }
+
+            console.warn('[WARN] 食物分類模型不可用，改用 COCO-SSD 作為回退');
             this.model = await cocoSsd.load();
             this.isLoaded = true;
-            console.log('✅ YOLO 模型載入成功！');
+            console.log('✅ COCO-SSD 回退模型載入成功！');
             return true;
         } catch (error) {
             console.error('❌ 模型載入失敗:', error);
             return false;
         }
+    }
+
+    /**
+     * 載入食物分類模型（可選）
+     */
+    async loadClassifier() {
+        if (!FOOD_CLASSIFIER_ENABLED) {
+            return false;
+        }
+        if (this.classifierLoadAttempted) {
+            return this.classifierLoaded;
+        }
+        this.classifierLoadAttempted = true;
+
+        if (!window.tf || typeof tf.loadGraphModel !== 'function') {
+            console.warn('[WARN] TFJS 未就緒，略過食物分類模型載入');
+            return false;
+        }
+
+        for (const modelUrl of FOOD_CLASSIFIER_MODEL_URLS) {
+            try {
+                this.classifier = await tf.loadGraphModel(modelUrl);
+                this.classifierLoaded = true;
+                console.log(`[INFO] 食物分類模型載入成功: ${modelUrl}`);
+                return true;
+            } catch (error) {
+                console.warn(`[WARN] 食物分類模型載入失敗: ${modelUrl} -> ${error.message}`);
+            }
+        }
+
+        this.classifier = null;
+        this.classifierLoaded = false;
+        return false;
     }
 
     /**
@@ -72,6 +148,9 @@ class YOLOFoodDetector {
     async detectFood(imageElement) {
         if (!this.isLoaded) {
             await this.loadModel();
+        }
+        if (!this.classifierLoaded) {
+            await this.loadClassifier();
         }
 
         // 確保圖像完全加載
@@ -109,24 +188,44 @@ class YOLOFoodDetector {
             console.log('📊 COCO-SSD 原始預測:', predictions);
             console.log('📊 檢測到的物體數量:', predictions.length);
             
+            const classifierItems = await this._classifyFood(imageElement);
+
+            if (classifierItems.length > 0) {
+                const classifierResult = this._formatFoodItems(classifierItems);
+                this.detectionResults = classifierResult;
+                console.log('✅ 使用食物專用分類模型作為主結果:', classifierResult);
+                return classifierResult;
+            }
+
             // 篩選食物相關類別
-            const foodDetections = predictions.filter(pred => 
+            const foodDetections = predictions.filter(pred =>
                 pred.score >= PRIMARY_CONFIDENCE_THRESHOLD && this.isFoodCategory(pred.class)
             );
 
-            if (foodDetections.length === 0) {
+            let mergedItems = this._mergeFoodItems(
+                this._toFoodItems(foodDetections, 'detector'),
+                classifierItems
+            );
+
+            if (mergedItems.length === 0) {
                 console.warn('⚠️ 未檢測到明確食物，嘗試高信心候選項...');
-                const allDetections = predictions.filter(pred => pred.score >= FALLBACK_CONFIDENCE_THRESHOLD);
-                if (allDetections.length > 0) {
-                    console.log('✅ 高信心候選項:', allDetections.map(p => `${p.class}(${Math.round(p.score*100)}%)`));
-                    return this._formatDetections(allDetections);
-                }
+                const fallbackDetections = predictions.filter(pred =>
+                    pred.score >= FALLBACK_CONFIDENCE_THRESHOLD &&
+                    !NON_FOOD_OBJECTS.has(pred.class.toLowerCase())
+                );
+                mergedItems = this._mergeFoodItems(
+                    this._toFoodItems(fallbackDetections, 'detector'),
+                    classifierItems
+                );
+            }
+
+            if (mergedItems.length === 0) {
                 console.warn('⚠️ 圖像中沒有檢測到任何物體');
                 return this._generateEmptyResult();
             }
 
             // 轉換為結構化格式
-            const result = this._formatDetections(foodDetections);
+            const result = this._formatFoodItems(mergedItems);
             this.detectionResults = result;
             
             console.log('✅ 檢測完成:', result);
@@ -161,6 +260,8 @@ class YOLOFoodDetector {
             'soup', 'ice cream', 'cake', 'cookie', 'donut', 'coffee',
             'tea', 'juice', 'milk', 'cheese', 'egg', 'apple', 'orange',
             'banana', 'carrot', 'potato', 'tomato', 'onion', 'garlic',
+            'sushi', 'ramen', 'taco', 'burrito', 'dumpling', 'noodles',
+            'curry', 'steak', 'fries', 'dessert', 'pancake', 'waffle',
             'dining', 'restaurant', 'kitchen', 'prepared',
             'cooked', 'fresh', 'baked', 'grilled', 'fried', 'boiled'
         ];
@@ -185,19 +286,20 @@ class YOLOFoodDetector {
     /**
      * 格式化檢測結果
      */
-    _formatDetections(detections) {
-        const foodItems = detections
-            .sort((a, b) => b.score - a.score)
+    _formatFoodItems(foodItems) {
+        const orderedItems = foodItems
+            .sort((a, b) => b.confidence - a.confidence)
             .map(d => ({
-                item: this.normalizeFoodLabel(d.class),
-                confidence: Math.round(d.score * 100) / 100
+                item: this.normalizeFoodLabel(d.item),
+                confidence: Math.round(d.confidence * 100) / 100,
+                source: d.source
             }));
 
         // 去除重複的食物
         const uniqueFoods = [];
         const seenItems = new Set();
         
-        for (const food of foodItems) {
+        for (const food of orderedItems) {
             if (!seenItems.has(food.item.toLowerCase())) {
                 uniqueFoods.push(food);
                 seenItems.add(food.item.toLowerCase());
@@ -257,6 +359,96 @@ class YOLOFoodDetector {
         };
         console.warn('⚠️ 返回空結果:', emptyResult);
         return emptyResult;
+    }
+
+    _toFoodItems(detections, source) {
+        return detections
+            .sort((a, b) => b.score - a.score)
+            .map(d => ({
+                item: this.normalizeFoodLabel(d.class),
+                confidence: d.score,
+                source: source
+            }));
+    }
+
+    _mergeFoodItems(detectorItems, classifierItems) {
+        const merged = new Map();
+
+        detectorItems.forEach(item => {
+            merged.set(item.item.toLowerCase(), {
+                item: item.item,
+                confidence: item.confidence,
+                source: item.source
+            });
+        });
+
+        classifierItems.forEach(item => {
+            const key = item.item.toLowerCase();
+            if (!merged.has(key)) {
+                merged.set(key, item);
+                return;
+            }
+            const existing = merged.get(key);
+            merged.set(key, {
+                item: existing.item,
+                confidence: Math.max(existing.confidence, item.confidence),
+                source: `${existing.source}+${item.source}`
+            });
+        });
+
+        return Array.from(merged.values());
+    }
+
+    async _classifyFood(imageElement) {
+        if (!this.classifierLoaded || !this.classifier) {
+            return [];
+        }
+
+        try {
+            const input = tf.tidy(() => {
+                const pixels = tf.browser.fromPixels(imageElement).toFloat();
+                const resized = tf.image.resizeBilinear(
+                    pixels,
+                    [FOOD_CLASSIFIER_INPUT_SIZE, FOOD_CLASSIFIER_INPUT_SIZE]
+                );
+                return resized.div(255).expandDims(0);
+            });
+
+            let output = this.classifier.predict(input);
+            if (Array.isArray(output)) {
+                output = output[0];
+            }
+
+            const probs = tf.softmax(output);
+            const data = await probs.data();
+
+            tf.dispose([input, output, probs]);
+
+            const topK = this._getTopK(data, FOOD101_LABELS, CLASSIFIER_TOP_K)
+                .filter(item => item.confidence >= CLASSIFIER_MIN_CONFIDENCE)
+                .map(item => ({
+                    item: this.normalizeFoodLabel(item.item),
+                    confidence: item.confidence,
+                    source: 'classifier'
+                }));
+
+            return topK;
+        } catch (error) {
+            console.warn(`[WARN] 食物分類失敗: ${error.message}`);
+            return [];
+        }
+    }
+
+    _getTopK(probabilities, labels, k) {
+        const scored = [];
+        for (let i = 0; i < probabilities.length; i += 1) {
+            scored.push({
+                item: labels[i] || `class_${i}`,
+                confidence: probabilities[i]
+            });
+        }
+
+        return scored.sort((a, b) => b.confidence - a.confidence).slice(0, k);
     }
 
     /**
