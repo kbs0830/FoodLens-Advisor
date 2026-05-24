@@ -1,7 +1,12 @@
 import os
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
+from dotenv import load_dotenv
 from app.schemas import AnalyzeFoodRequest, AnalyzeTextRequest, AnalyzeFoodResponse, DietaryRuleCheck, MacroNutrients
+
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 SYSTEM_PROMPT = (
@@ -10,19 +15,79 @@ SYSTEM_PROMPT = (
     "輸出必須是可解析 JSON。"
 )
 
+FOOD_PREVIEW_HINTS = (
+    "chicken",
+    "beef",
+    "fish",
+    "egg",
+    "broccoli",
+    "rice",
+    "bread",
+    "milk",
+    "cheese",
+    "potato",
+    "tomato",
+    "lettuce",
+    "apple",
+    "banana",
+    "orange",
+    "salad",
+    "soup",
+    "pork",
+    "shrimp",
+    "cake",
+    "donut",
+    "pizza",
+    "burger",
+    "hotdog",
+    "hot dog",
+    "sandwich",
+    "noodle",
+    "spaghetti",
+    "sushi",
+    "ramen",
+    "tofu",
+    "meatball",
+    "kebab",
+    "shashlik",
+    "samosa",
+    "manti",
+    "pilaf",
+    "lagman",
+    "dolma",
+    "cutlet",
+    "sausage",
+    "macaroni",
+    "salad",
+    "cabbage rolls",
+    "jarkop",
+    "beans",
+    "corn",
+    "pomegranate",
+    "peas",
+    "pozharskiy",
+    "blinchik",
+)
+
 YOLO_TEXT_SYSTEM_PROMPT = (
-    "你是一位專業的營養分析師。"
-    "根據 YOLO 檢測到的食物清單和描述，分析這餐的營養成分與飲食符合度。"
-    "請回傳 JSON，不要輸出 Markdown 或多餘文字。"
-    "JSON 必須包含以下欄位："
-    "food_items, estimated_calories_kcal, macros, rule_check, ai_conclusion, "
-    "next_meal_suggestion, next_meal_options, nutrition_tips, diet_warnings, confidence_note。"
-    "macros 需包含 protein_g, carbs_g, fat_g。"
-    "rule_check 需包含 high_protein, zero_starch, zero_alcohol, mild_not_spicy。"
+    "你是一位專業的營養分析師與飲食顧問，擅長繁體中文飲食建議。"
+    "根據使用者這餐偵測到的食物清單，完成以下任務：\n"
+    "1. 估算這餐的總熱量（kcal）與三大營養素（蛋白質g、碳水g、脂肪g）\n"
+    "2. 評估這餐是否符合健康飲食原則：高蛋白(protein_g>=30)、低澱粉(carbs_g<=30)、無酒精、清淡不辣\n"
+    "3. 用 2-3 句繁體中文寫出這餐的整體評語（ai_conclusion），包含優缺點\n"
+    "4. 給出具體的下一餐建議（next_meal_suggestion），說明應補充什麼營養\n"
+    "5. 提供 3 個具體的下一餐選項（next_meal_options），每個選項包含主菜+配菜\n"
+    "6. 給 2-3 條實用的營養提示（nutrition_tips），針對這餐的不足或過量\n"
+    "7. 列出需注意的飲食警告（diet_warnings），例如高油脂、高糖分、可能的過敏原\n"
+    "請只回傳 JSON，不要輸出 Markdown 格式或任何多餘文字。"
+    "JSON 欄位：food_items, estimated_calories_kcal, macros(protein_g,carbs_g,fat_g), "
+    "rule_check(high_protein,zero_starch,zero_alcohol,mild_not_spicy), "
+    "ai_conclusion, next_meal_suggestion, next_meal_options, nutrition_tips, diet_warnings, confidence_note"
 )
 
 
 def _build_ai_conclusion(food_items: List[str], rule_check: DietaryRuleCheck, source: str) -> str:
+    preview_items = _preview_food_items(food_items)
     if rule_check.high_protein and rule_check.zero_starch and rule_check.zero_alcohol and rule_check.mild_not_spicy:
         return f"{source} 判斷：這餐整體結構非常符合飲食目標，可作為高蛋白低負擔餐的良好範例。"
 
@@ -37,8 +102,22 @@ def _build_ai_conclusion(food_items: List[str], rule_check: DietaryRuleCheck, so
         summary_parts.append("未見酒精風險")
 
     summary = "、".join(summary_parts) if summary_parts else "整體平衡"
-    food_preview = "、".join(food_items[:3]) if food_items else "本餐內容"
+    food_preview = "、".join(preview_items[:3]) if preview_items else "本餐內容"
     return f"{source} 結語：{food_preview} 的營養結構屬於 {summary}，建議下一餐補強蔬菜與蛋白質平衡。"
+
+
+def _looks_like_food_label(label: str) -> bool:
+    text = label.strip().lower()
+    if not text:
+        return False
+    if any(ord(char) > 127 for char in text):
+        return True
+    return any(hint in text for hint in FOOD_PREVIEW_HINTS)
+
+
+def _preview_food_items(food_items: List[str]) -> List[str]:
+    filtered = [item for item in food_items if _looks_like_food_label(item)]
+    return filtered if filtered else []
 
 
 def _confidence_note_from_meta(req: AnalyzeTextRequest) -> str:
@@ -79,6 +158,63 @@ def _ensure_list(value: Any) -> List[str]:
     return []
 
 
+def _normalize_food_items(raw: Any) -> List[str]:
+    """將各種可能的 food_items 形式轉成 List[str]，處理 dict/list/str。"""
+    items: List[str] = []
+    if isinstance(raw, list):
+        raw_items = cast(List[Any], raw)
+        for it in raw_items:
+            # 明確地告訴型別檢查器 'it' 可能是 dict 或 str
+            if isinstance(it, str):
+                items.append(it)
+            elif isinstance(it, dict):
+                d = cast(Dict[str, Any], it)
+                # 優先取 name 或 label 鍵
+                name = d.get('name') or d.get('label')
+                if name is not None:
+                    items.append(str(name))
+                else:
+                    items.append(str(d))
+            else:
+                items.append(str(it))
+    elif isinstance(raw, str) and raw.strip():
+        # 逗號分隔的字串
+        parts = [p.strip() for p in raw.split(',') if p.strip()]
+        items.extend(parts)
+    return items
+
+
+def _pick_text(*values: Any) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _iter_model_candidates(*values: Any) -> List[str]:
+    seen: set[str] = set()
+    candidates: List[str] = []
+
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple)):
+            raw_values = cast(List[Any], value)
+        else:
+            raw_values = [value]
+
+        for raw_value in raw_values:
+            text = str(raw_value).strip()
+            if text and text not in seen:
+                seen.add(text)
+                candidates.append(text)
+
+    return candidates
+
+
 def _get_gemini_client() -> Optional[Any]:
     """初始化 Gemini API 客戶端
 
@@ -99,59 +235,25 @@ def _get_gemini_client() -> Optional[Any]:
         return None
 
 
+def _create_gemini_model(genai: Any, model_names: List[str]) -> Any:
+    last_error: Optional[Exception] = None
+    for model_name in model_names:
+        try:
+            print(f"[INFO] 嘗試 Gemini 模型: {model_name}")
+            return getattr(genai, "GenerativeModel")(model_name)  # type: ignore[attr-defined]
+        except Exception as error:
+            last_error = error
+            print(f"[WARN] Gemini 模型初始化失敗: {model_name} -> {error}")
+
+    if last_error:
+        raise last_error
+
+    raise Exception("沒有可用的 Gemini 模型")
+
+
 async def analyze_with_provider(req: AnalyzeFoodRequest) -> AnalyzeFoodResponse:
     """原始的圖像分析功能（保持相容性）"""
-    provider = os.getenv("VISION_PROVIDER", "mock").lower()
-
-    if provider == "gemini":
-        return await _analyze_with_gemini(req.image_base64)
-    
-    if provider == "mock":
-        rule_check = DietaryRuleCheck(
-            high_protein=True,
-            zero_starch=False,
-            zero_alcohol=True,
-            mild_not_spicy=True,
-        )
-        return AnalyzeFoodResponse(
-            food_items=["chicken breast", "broccoli"],
-            estimated_calories_kcal=312.0,
-            macros=MacroNutrients(protein_g=48.0, carbs_g=8.0, fat_g=9.0),
-            rule_check=rule_check,
-            ai_conclusion=_build_ai_conclusion(["chicken breast", "broccoli"], rule_check, "Mock"),
-            next_meal_suggestion="下一餐可增加葉菜類與水分，維持蛋白質攝取。",
-            next_meal_options=[
-                "雞胸 + 燙青菜 + 菇類",
-                "豆腐 + 涼拌海帶芽 + 雞蛋",
-                "鮭魚 + 時蔬 + 味噌湯",
-            ],
-            nutrition_tips=[
-                "蛋白質充足時，可搭配高纖蔬菜提升飽足感。",
-                "避免額外澱粉份量過大，維持血糖穩定。",
-            ],
-            diet_warnings=[],
-            confidence_note="",
-        )
-
-    # TODO: Integrate OpenAI / Gemini Vision API with SYSTEM_PROMPT.
-    # Keep API keys only on server-side env vars.
-    return AnalyzeFoodResponse(
-        food_items=[],
-        estimated_calories_kcal=0,
-        macros=MacroNutrients(protein_g=0, carbs_g=0, fat_g=0),
-        rule_check=DietaryRuleCheck(
-            high_protein=False,
-            zero_starch=False,
-            zero_alcohol=True,
-            mild_not_spicy=True,
-        ),
-        ai_conclusion="尚未設定供應商，請先配置 VISION_PROVIDER 與 API Key。",
-        next_meal_suggestion="尚未設定供應商，請先配置 VISION_PROVIDER 與 API Key。",
-        next_meal_options=[],
-        nutrition_tips=[],
-        diet_warnings=[],
-        confidence_note="",
-    )
+    return await _analyze_with_gemini(req.image_base64)
 
 
 async def _analyze_with_gemini(image_base64: str) -> AnalyzeFoodResponse:
@@ -164,7 +266,18 @@ async def _analyze_with_gemini(image_base64: str) -> AnalyzeFoodResponse:
             raise Exception("缺少 GEMINI_API_KEY 或 google.generativeai 未安裝")
 
         # 使用 getattr 直接呼叫第三方 API，避免不必要的 cast
-        model = getattr(genai, "GenerativeModel")('gemini-pro-vision')  # type: ignore[attr-defined]
+        vision_model_candidates = _iter_model_candidates(
+            os.getenv("GEMINI_VISION_MODEL"),
+            os.getenv("GEMINI_MODEL"),
+            [
+                "models/gemini-2.5-flash-lite",
+                "models/gemini-2.5-flash",
+                "models/gemini-2.0-flash-lite",
+                "models/gemini-2.0-flash",
+                "models/gemini-1.5-flash",
+            ],
+        )
+        model = _create_gemini_model(genai, vision_model_candidates)
         
         # 解碼 base64 圖像
         image_data = base64.b64decode(image_base64)
@@ -215,8 +328,8 @@ async def _analyze_with_gemini(image_base64: str) -> AnalyzeFoodResponse:
                 zero_alcohol=bool(rule_check.get("zero_alcohol", data.get("zero_alcohol", True))),
                 mild_not_spicy=bool(rule_check.get("mild_not_spicy", data.get("mild_not_spicy", True)))
             ),
-            ai_conclusion=data.get("ai_conclusion", data.get("next_meal_suggestion", "")),
-            next_meal_suggestion=data.get("next_meal_suggestion", ""),
+            ai_conclusion=_pick_text(data.get("ai_conclusion"), data.get("next_meal_suggestion")),
+            next_meal_suggestion=_pick_text(data.get("next_meal_suggestion"), data.get("ai_conclusion")),
             next_meal_options=_ensure_list(data.get("next_meal_options", [])),
             nutrition_tips=_ensure_list(data.get("nutrition_tips", [])),
             diet_warnings=_ensure_list(data.get("diet_warnings", [])),
@@ -229,64 +342,29 @@ async def _analyze_with_gemini(image_base64: str) -> AnalyzeFoodResponse:
 
 
 async def analyze_text_with_ai(req: AnalyzeTextRequest) -> AnalyzeFoodResponse:
-    """新增: 使用 YOLO 檢測結果進行文字分析
-    
-    此功能使用 YOLO 前端檢測的文字結果，而非圖像。
-    大幅降低 token 消耗 (~5000x)
-    
-    若食物列表為空，提供 mock 數據作為回退
-    """
-    confidence_note: str = ""
-    try:
-        confidence_note = _confidence_note_from_meta(req)
+    """使用 YOLO 檢測結果文字分析，呼叫 Gemini AI。"""
+    if not req.food_items:
+        raise ValueError("YOLO 未偵測到食物，請上傳更清晰的圖片")
 
-        # 若食物列表為空，使用 mock 數據
-        if not req.food_items or len(req.food_items) == 0:
-            print("[WARN] 食物列表為空，使用 Mock 數據作為回退")
-            return _create_analysis_response(["chicken breast", "broccoli"], confidence_note)
-        
-        provider = os.getenv("AI_PROVIDER", os.getenv("VISION_PROVIDER", "mock")).lower()
-        print(f"[INFO] AI_PROVIDER: {provider}")
+    confidence_note = _confidence_note_from_meta(req)
 
-        # 構建食物描述字符串
-        food_str = ", ".join(req.food_items)
-        detector_info = f"detector_build={req.detector_build or 'unknown'}"
-        meta_info = ""
-        if req.detection_meta:
-            meta_info = f"detection_count={req.detection_meta.detection_count}, avg_confidence={req.detection_meta.average_confidence}"
-        full_prompt = (
-            f"檢測到的食物: {food_str}\n"
-            f"描述: {req.description}\n"
-            f"檢測資訊: {detector_info} {meta_info}".strip()
-        )
+    food_str = ", ".join(req.food_items)
+    detector_info = f"detector_build={req.detector_build or 'unknown'}"
+    meta_info = ""
+    if req.detection_meta:
+        meta_info = f"detection_count={req.detection_meta.detection_count}, avg_confidence={req.detection_meta.average_confidence:.2f}"
+    full_prompt = (
+        f"檢測到的食物: {food_str}\n"
+        f"描述: {req.description}\n"
+        f"檢測資訊: {detector_info} {meta_info}".strip()
+    )
 
-        if provider == "gemini":
-            try:
-                return await _analyze_text_with_gemini(
-                    req.food_items,
-                    full_prompt,
-                    req.locale,
-                    confidence_note,
-                )
-            except Exception as gemini_error:
-                print(f"[WARN] Gemini 分析失敗: {gemini_error}，回退到 Mock")
-                return _create_analysis_response(req.food_items, confidence_note)
-
-        if provider == "mock":
-            # Mock 分析結果
-            return _create_analysis_response(req.food_items, confidence_note)
-
-        # 預設回退到 mock
-        print(f"[WARN] 未知的 provider: {provider}，回退到 Mock")
-        return _create_analysis_response(req.food_items, confidence_note)
-    
-    except Exception as e:
-        print(f"[ERROR] analyze_text_with_ai 發生錯誤: {e}")
-        print(f"[ERROR] 錯誤類型: {type(e)}")
-        import traceback
-        traceback.print_exc()
-        # 最後的回退
-        return _create_analysis_response(["chicken breast", "broccoli"], confidence_note)
+    return await _analyze_text_with_gemini(
+        req.food_items,
+        full_prompt,
+        req.locale,
+        confidence_note,
+    )
 
 
 async def _analyze_text_with_gemini(
@@ -301,7 +379,18 @@ async def _analyze_text_with_gemini(
         if not genai:
             raise Exception("缺少 GEMINI_API_KEY 或 google.generativeai 未安裝")
 
-        model = getattr(genai, "GenerativeModel")('gemini-pro')  # type: ignore[attr-defined]
+        text_model_candidates = _iter_model_candidates(
+            os.getenv("GEMINI_TEXT_MODEL"),
+            os.getenv("GEMINI_MODEL"),
+            [
+                "models/gemini-2.5-flash-lite",
+                "models/gemini-2.5-flash",
+                "models/gemini-2.0-flash-lite",
+                "models/gemini-2.0-flash",
+                "models/gemini-1.5-flash",
+            ],
+        )
+        model = _create_gemini_model(genai, text_model_candidates)
         
         prompt = (
             f"{YOLO_TEXT_SYSTEM_PROMPT}\n\n"
@@ -320,9 +409,11 @@ async def _analyze_text_with_gemini(
         data = _extract_json(text)
         macros = data.get("macros", {})
         rule_check = data.get("rule_check", {})
-        
+
+        normalized_food_items = _normalize_food_items(data.get("food_items", food_items))
+
         return AnalyzeFoodResponse(
-            food_items=data.get("food_items", food_items),
+            food_items=normalized_food_items,
             estimated_calories_kcal=float(data.get("estimated_calories_kcal", 0)),
             macros=MacroNutrients(
                 protein_g=float(macros.get("protein_g", data.get("protein_g", 0))),
@@ -335,8 +426,8 @@ async def _analyze_text_with_gemini(
                 zero_alcohol=bool(rule_check.get("zero_alcohol", data.get("zero_alcohol", True))),
                 mild_not_spicy=bool(rule_check.get("mild_not_spicy", data.get("mild_not_spicy", True)))
             ),
-            ai_conclusion=data.get("ai_conclusion", data.get("next_meal_suggestion", "")),
-            next_meal_suggestion=data.get("next_meal_suggestion", ""),
+            ai_conclusion=_pick_text(data.get("ai_conclusion"), data.get("next_meal_suggestion")),
+            next_meal_suggestion=_pick_text(data.get("next_meal_suggestion"), data.get("ai_conclusion")),
             next_meal_options=_ensure_list(data.get("next_meal_options", [])),
             nutrition_tips=_ensure_list(data.get("nutrition_tips", [])),
             diet_warnings=_ensure_list(data.get("diet_warnings", [])),
@@ -357,6 +448,22 @@ def _create_analysis_response(food_items: List[str], confidence_note: str = "") 
     nutrition_db: Dict[str, Dict[str, float]] = {
         "chicken": {"cal": 165, "protein": 31, "carbs": 0, "fat": 3.6},
         "breast": {"cal": 165, "protein": 31, "carbs": 0, "fat": 3.6},
+        "meatball": {"cal": 280, "protein": 16, "carbs": 8, "fat": 18},
+        "kebab": {"cal": 240, "protein": 23, "carbs": 2, "fat": 15},
+        "shashlik": {"cal": 240, "protein": 23, "carbs": 2, "fat": 15},
+        "samosa": {"cal": 250, "protein": 8, "carbs": 22, "fat": 14},
+        "manti": {"cal": 220, "protein": 11, "carbs": 24, "fat": 8},
+        "pilaf": {"cal": 320, "protein": 10, "carbs": 42, "fat": 11},
+        "lagman": {"cal": 280, "protein": 12, "carbs": 38, "fat": 8},
+        "dolma": {"cal": 190, "protein": 7, "carbs": 18, "fat": 9},
+        "cutlet": {"cal": 260, "protein": 18, "carbs": 10, "fat": 16},
+        "sausage": {"cal": 300, "protein": 14, "carbs": 4, "fat": 25},
+        "macaroni": {"cal": 150, "protein": 5, "carbs": 30, "fat": 1.5},
+        "salad": {"cal": 80, "protein": 2, "carbs": 8, "fat": 4},
+        "cabbage": {"cal": 25, "protein": 1.3, "carbs": 6, "fat": 0.1},
+        "beans": {"cal": 127, "protein": 8.7, "carbs": 22.8, "fat": 0.5},
+        "corn": {"cal": 96, "protein": 3.4, "carbs": 21, "fat": 1.5},
+        "peas": {"cal": 81, "protein": 5.4, "carbs": 14, "fat": 0.4},
         "broccoli": {"cal": 34, "protein": 2.8, "carbs": 7, "fat": 0.4},
         "rice": {"cal": 130, "protein": 2.7, "carbs": 28, "fat": 0.3},
         "beef": {"cal": 250, "protein": 26, "carbs": 0, "fat": 15},

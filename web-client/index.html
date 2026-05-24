@@ -5,74 +5,245 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FoodLens Advisor - 食物分析</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* ===== 啟動 Loading 畫面 ===== */
+        #app-loader {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #5c6bc0 0%, #7b1fa2 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+
+        #app-loader.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .loader-logo {
+            font-size: 64px;
+            margin-bottom: 20px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .loader-title {
+            color: white;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+
+        .loader-subtitle {
+            color: rgba(255,255,255,0.75);
+            font-size: 13px;
+            margin-bottom: 36px;
+        }
+
+        .loader-bar {
+            width: 200px;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .loader-bar-fill {
+            height: 100%;
+            background: white;
+            border-radius: 4px;
+            animation: loadBar 1.8s ease-in-out forwards;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50%       { transform: scale(1.08); }
+        }
+
+        @keyframes loadBar {
+            0%   { width: 0%; }
+            60%  { width: 75%; }
+            100% { width: 100%; }
+        }
+
+        /* ===== AI 分析中 Overlay ===== */
+        #ai-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(92, 107, 192, 0.18);
+            backdrop-filter: blur(3px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        #ai-overlay.active {
+            display: flex;
+        }
+
+        .ai-overlay-card {
+            background: white;
+            border-radius: 16px;
+            padding: 36px 40px;
+            text-align: center;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.15);
+            animation: popIn 0.3s ease;
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to   { transform: scale(1);   opacity: 1; }
+        }
+
+        .ai-overlay-icon {
+            font-size: 48px;
+            margin-bottom: 14px;
+            display: block;
+        }
+
+        .ai-overlay-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: #3949ab;
+            margin-bottom: 6px;
+        }
+
+        .ai-overlay-sub {
+            font-size: 12px;
+            color: #9e9e9e;
+            margin-bottom: 20px;
+        }
+
+        .ai-dots {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .ai-dots span {
+            width: 10px;
+            height: 10px;
+            background: #5c6bc0;
+            border-radius: 50%;
+            animation: bounce 1.2s ease-in-out infinite;
+        }
+
+        .ai-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .ai-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+            40%            { transform: scale(1);   opacity: 1;   }
+        }
+    </style>
 </head>
 <body>
+
+    <!-- 啟動 Loading 畫面 -->
+    <div id="app-loader">
+        <div class="loader-logo">🍽️</div>
+        <div class="loader-title">FoodLens Advisor</div>
+        <div class="loader-subtitle">AI 飲食分析助手，正在初始化...</div>
+        <div class="loader-bar">
+            <div class="loader-bar-fill"></div>
+        </div>
+    </div>
+
+    <!-- AI 分析中 Overlay -->
+    <div id="ai-overlay">
+        <div class="ai-overlay-card">
+            <span class="ai-overlay-icon">🧠</span>
+            <div class="ai-overlay-text">Gemini AI 分析中</div>
+            <div class="ai-overlay-sub">正在計算營養素與飲食建議...</div>
+            <div class="ai-dots">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <header class="header">
             <h1>🍽️ FoodLens Advisor</h1>
-            <p class="subtitle">AI 飲食分析助手 - YOLO 檢測版</p>
+            <p class="subtitle">AI 飲食分析助手 · YOLO 食物辨識 + Gemini 營養分析</p>
         </header>
 
         <main class="main-content">
-            <!-- 連線測試部分 -->
+            <!-- 連線測試 -->
             <section class="section-test">
                 <h2>🔗 連線檢測</h2>
                 <button id="testBtn" class="btn btn-primary" onclick="testConnection()">
                     測試 BFF 連線
                 </button>
-                <div id="status" class="status"></div>
+                <div id="status" class="status idle">點擊按鈕測試 BFF 連線</div>
             </section>
 
-            <!-- 圖像上傳與 YOLO 檢測部分 -->
+            <!-- 圖像上傳 -->
             <section class="section-upload">
                 <h2>📸 上傳食物圖像</h2>
                 <div class="upload-area" id="uploadArea">
-                    <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                    <input type="file" id="imageInput" accept="image/*" style="display:none;">
                     <div class="upload-placeholder">
                         <p>🖼️ 點擊選擇圖像或拖拽上傳</p>
-                        <small>支援 JPG, PNG, GIF</small>
+                        <small>支援 JPG、PNG、GIF</small>
                     </div>
                 </div>
-                <canvas id="detectionCanvas" style="display: none;"></canvas>
-                <img id="previewImage" style="display: none; max-width: 100%; margin: 20px 0;">
-                
+
+                <img id="previewImage" style="display:none; max-width:100%; margin:14px 0;">
+                <canvas id="detectionCanvas" style="display:none;"></canvas>
+
                 <div class="button-group">
-                    <button id="uploadBtn" class="btn btn-secondary" onclick="selectImage()">
-                        選擇圖像
-                    </button>
-                    <button id="cameraBtn" class="btn btn-secondary" onclick="useCamera()" style="display: none;">
-                        使用相機
-                    </button>
+                    <button id="uploadBtn" class="btn btn-secondary" onclick="selectImage()">選擇圖像</button>
                 </div>
 
-                <!-- YOLO 檢測狀態 -->
-                <div id="detectionStatus" style="display: none;"></div>
-                
-                <!-- YOLO 檢測結果 -->
-                <div id="detectionResult" class="detection-result" style="display: none;"></div>
+                <div id="detectionStatus" style="display:none;"></div>
+                <div id="detectionResult" class="detection-result" style="display:none;"></div>
             </section>
 
-            <!-- AI 分析結果部分 -->
+            <!-- AI 分析結果 -->
             <section class="section-result">
                 <div id="result" class="result"></div>
             </section>
 
             <!-- 提示 -->
             <div class="tips">
-                <p>💡 提示：確保 BFF 已啟動在 http://127.0.0.1:8080</p>
-                <p>🤖 使用 YOLO 前端檢測 + AI 後端分析，大幅降低 Token 消耗</p>
+                <p>💡 確保 BFF 已啟動在 http://127.0.0.1:8080</p>
+                <p>🤖 YOLO 前端辨識 + Gemini AI 後端分析，自動飲食建議</p>
             </div>
         </main>
     </div>
 
-    <!-- TensorFlow.js 和 COCO-SSD 模型 -->
+    <!-- ONNX Runtime -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <!-- TensorFlow.js + COCO-SSD -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2"></script>
-    
-    <!-- YOLO 檢測模塊 -->
-    <script src="yolo-detector.js?v=20260523r1"></script>
-    
+
+    <!-- YOLO 檢測模組 -->
+    <script src="yolo-detector.js?v=20260525r1"></script>
     <!-- 主程式 -->
-    <script src="script.js?v=20260523r1"></script>
+    <script src="script.js?v=20260525r1"></script>
+
+    <script>
+        // 啟動 loading 畫面：等待 JS 資源就緒後淡出
+        window.addEventListener('load', () => {
+            const loader = document.getElementById('app-loader');
+            setTimeout(() => {
+                loader.classList.add('hidden');
+            }, 1800);
+        });
+
+        // AI overlay 控制
+        window.showAIOverlay = () => {
+            document.getElementById('ai-overlay').classList.add('active');
+        };
+        window.hideAIOverlay = () => {
+            document.getElementById('ai-overlay').classList.remove('active');
+        };
+    </script>
 </body>
 </html>

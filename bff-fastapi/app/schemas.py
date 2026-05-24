@@ -33,7 +33,11 @@ class DetectFoodResponse(BaseModel):
     detection_count: int
     raw_detections: List[DetectionItem] = Field(default_factory=lambda: cast(List[DetectionItem], []))
     model_name: str = Field(default="", description="模型名稱")
+    model_path: str = Field(default="", description="模型檔案路徑")
+    model_classes: List[str] = Field(default_factory=lambda: cast(List[str], []), description="模型類別清單")
     model_source: str = Field(default="", description="模型來源")
+    confidence_threshold: float = Field(default=0.18, description="偵測信心閾值")
+    average_confidence: float = Field(default=0.0, description="平均信心度")
     note: str = Field(default="", description="備註")
 
 
@@ -70,3 +74,22 @@ class AnalyzeFoodResponse(BaseModel):
     nutrition_tips: List[str] = Field(default_factory=list, description="營養提示")
     diet_warnings: List[str] = Field(default_factory=list, description="注意事項")
     confidence_note: str = Field(default="", description="可信度提示")
+
+
+class ClassifyFoodRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64 image payload")
+    locale: str = Field(default="zh-TW")
+
+
+class TopKItem(BaseModel):
+    label: str
+    confidence: float
+
+
+class ClassifyFoodResponse(BaseModel):
+    food_items: List[str]
+    confidence_scores: List[float] = Field(default_factory=lambda: cast(List[float], []))
+    description: str
+    topk: List[TopKItem] = Field(default_factory=lambda: cast(List[TopKItem], []), description="Top-k 預測，包含 label 與 confidence")
+    model_name: str = Field(default="", description="模型名稱")
+    note: str = Field(default="", description="備註")
